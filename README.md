@@ -2,8 +2,6 @@
 
 A free, open-source WordPress plugin for running club-level USCF tournaments end to end: setup guide, roster import, a manual pairing aid, round-by-round result entry, standings with USCF tiebreaks, and USCF DBF export for upload to [ratings.uschess.org](https://ratings.uschess.org).
 
-Designed to sit on top of [The Events Calendar](https://wordpress.org/plugins/the-events-calendar/) (TEC), [Event Tickets](https://wordpress.org/plugins/event-tickets/) (ET), [Event Tickets Extra Custom Fields](https://github.com/christefano/wp-etecf) (ETECF), and [Event Tickets Registrations](https://github.com/christefano/wp-etr) (ETR), and Tournament Manager (TM) pulls in a club's existing online registration from Event Tickets (enhanced by Extra Custom Fields) straight into a tournament manager with sections, airings, wall charts, standings, and final results. 
-
 Tournament Manager was built for the [McMinnville Chess Club](https://macchess.org) as a free, truly open-source alternative to online and desktop tournament software, and it's been generalized for clubs that want tournament management on their own WordPress site with unlimited tournaments and unlimited players. No monthly fees and no desktop software needed! You can actually run entire rated and unrated tournaments from your phone using your existing WordPress login.
 
 If you find this plugin useful, consider [making a donation](https://macchess.org/donate) to the McMinnville Chess Club!
@@ -20,6 +18,8 @@ Tournament Manager runs stand-alone for manual tournament administration, but fo
 - [Event Tickets](https://wordpress.org/plugins/event-tickets/) (ET)
 - [Event Tickets Extra Custom Fields](https://github.com/christefano/wp-etecf) (ETECF)
 - [Event Tickets Registrations](https://github.com/christefano/wp-etr) (ETR)
+
+Tournament Manager pulls in a club's existing online registration from ET (enhanced with extra costom fields from ETECF) and straight into a tournament manager with sections, airings, wall charts, standings, and final results. 
 
 The "Import to Tournament Manager" button on ETR's "Registrations" tab needs ETR 5.2.3 or later. Older ETR versions will still work with Tournament Manager but only through the manual CSV upload.
 
