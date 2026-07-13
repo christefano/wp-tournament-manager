@@ -75,7 +75,7 @@ The "Import to Tournament Manager" button on ETR's "Registrations" tab needs ETR
 
 **Cache-aware**
 
-- Every write that changes what the public sees (a saved round, a withdrawal, a settings change) flushes that event page across whichever page-cache plugin is active (W3 Total Cache, WP Super Cache, WP Rocket, and LiteSpeed Cache.
+- Every write that changes what the public sees (a saved round, a withdrawal, a settings change) flushes that event page across whichever page-cache plugin is active (W3 Total Cache, WP Super Cache, WP Rocket, and LiteSpeed Cache).
 - TD-only pages are marked so they are never cached publicly.
 
 **Permissions**
@@ -97,32 +97,32 @@ First, an event for the tournament needs to be created (using The Events Calenda
 
 - Tournament Manager > Settings: set the affiliate ID and TD IDs (rated events only), default city / state / ZIP, and time control presets so you don't retype them per section.
 
-2. **Create or link a tournament**
+2. **Create a tournament**
 
-- Add a tournament, link it to the event's page on TEC, and set rated / unrated and confirm its date range. This is what turns on the pairing aid, wall charts, results, and standings on the event page itself.
+- Add a tournament, link it to the event's page, and set rated / unrated and confirm its date range. This is what turns on the pairing aid, wall charts, results, and standings on the event page itself.
 
 3. **Import the roster**
 
-- From the tournament's edit page, in click "Import to Tournament Manager" right on the event's Registrations tab or upload ETR's "Pairing export" CSV. Review the preview (sections, rated flags, no-shows skipped, any blank USCF IDs) and confirm.
+- Click "Import to Tournament Manager" right on the event's "Registrations" tab, or upload ETR's "Pairing export" CSV in the tournament's edit page. Review the preview (sections, rated flags, no-shows skipped, any blank USCF IDs) and confirm.
 
 4. **Enter rounds**
 
-- On the event's page, use the pairing aid to pair each round by hand, then enter results (or byes or a withdrawal) and save. Standings update immediately for anyone viewing the page. There's a "Suggest pairings" link that pairs all the players and populates the pairing add for you to review and save. Pairings are determined by closeness in rating, and a player is never paired against the same player twice.
+- On the event's page, use the pairing aid under the "Round entry" tab to pair each round either by hand or with the "Suggest pairings" link, then enter results (or byes or a withdrawal) and save. Standings are updated immediately for anyone viewing the page. The "Suggest pairings" link pairs all the players and populates the pairing aid for you to review, modify, and save. Pairings are determined by closeness in rating, and a player is never paired against the same player twice.
 
 5. **Check standings**
 
-- The event page shows live standings with tiebreaks.
+- The event page shows live standings with tiebreaks under the "Sandings" tab.
 
 6. **Export**
 
-- For rated tournaments, the tournament's edit page runs a readiness report. Review errors and warnings. Errors block the download and warnings don't.
+- For rated tournaments, the tournament's edit page runs a readiness report. Review errors and warnings (e.g. a registrant's USCF ID is missing due to them registering before getting one). Errors block the download and warnings don't.
 - Once it's error-free, download the DBF zip. Upload the zip file's three DBF files at the USCF TD / Affiliate area at [ratings.uschess.org](https://ratings.uschess.org).
 
 ## Troubleshooting
 
 **What about walk-ins?**
 
-The moment that event registrations are imported into Tournament Manager, no new entrants can be added. Tournament Manager doesn't go out of its way to handle situations involving walk-ins or late registrations, and your event registration end date ("ticket sell date") is controlled by Event Tickets.
+The moment that event registrations are imported into Tournament Manager, no new entrants can be added. Tournament Manager doesn't go out of its way to handle situations involving walk-ins or late registrations, and your event registration end date ("ticket sell date") is controlled by Event Tickets and ETR's global checkbox for allowing registrations *after* an event has started.
 
 **Multiple player profile support**
 
@@ -132,7 +132,7 @@ Registrations are viewable / editable by the person who paid during registration
 
 Welcome to the party! Tournament Manager explains things in admin notices, so you might not see them if you have notices hidden with a third-party plugin like [Admin & Site Enhancements](https://wordpress.org/plugins/admin-site-enhancements/). On the upside, you can enable a third-party plugin like ASE to hide notices if you no longer wish to see them. I recommend something like [Unnotifier](https://wordpress.org/plugins/unnotifier/) to dismiss individual notices rather than the all or nothing approach like what's in ASE and others.
 
-There's also an optional setup guide that will walk you through setting up and managing a tournament. If you accidentally dismissed the setup guide admin notice, click the "Show setup guide" button in Tournament Manager Settings for it to reappear.
+There's also an optional setup guide that will walk you through setting up and managing a tournament. (This is still a work-in-progress, and feedback is welcome.) If you accidentally dismissed the setup guide admin notice, click the "Show setup guide" button in Tournament Manager Settings for it to reappear.
 
 ## Data
 
