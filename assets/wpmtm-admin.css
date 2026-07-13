@@ -1,0 +1,251 @@
+/* Tournament Manager admin screens */
+
+.wpmtm-wrap .wpmtm-badge {
+	display: inline-block;
+	padding: 2px 8px;
+	border-radius: 3px;
+	background: #f0f0f1;
+	color: #50575e;
+	font-size: 11px;
+	font-weight: 600;
+	text-transform: uppercase;
+	letter-spacing: 0.02em;
+}
+
+.wpmtm-wrap .wpmtm-badge--rated {
+	background: #d5e8d4;
+	color: #2c5c2e;
+}
+
+.wpmtm-wrap .wpmtm-repeater {
+	margin-top: 12px;
+}
+
+.wpmtm-wrap .wpmtm-repeater td,
+.wpmtm-wrap .wpmtm-repeater th {
+	vertical-align: top;
+	padding: 8px 10px;
+}
+
+.wpmtm-wrap .wpmtm-repeater input[type="text"],
+.wpmtm-wrap .wpmtm-repeater input[type="number"] {
+	width: 100%;
+}
+
+.wpmtm-wrap .wpmtm-repeater .small-text {
+	width: 5em;
+}
+
+.wpmtm-wrap .wpmtm-col-num {
+	width: 3em;
+	color: #787c82;
+	text-align: center;
+}
+
+.wpmtm-wrap .wpmtm-col-advanced {
+	position: relative;
+	vertical-align: top;
+}
+
+.wpmtm-wrap .wpmtm-repeater details {
+	display: block;
+	width: fit-content;
+	max-width: 220px;
+}
+
+.wpmtm-wrap .wpmtm-repeater details summary {
+	cursor: pointer;
+	white-space: nowrap;
+}
+
+/* The opened panel is its own bordered card, laid out with normal document
+ * flow (position: static - never absolute/floated), so it cannot spill
+ * across the table's fixed column boundaries into the Rated cell next to
+ * it (assets/wpmtm-admin.css previously only capped details' width, which
+ * still let its child <p>/<label>/<input> content render at natural width
+ * and overflow the narrow Advanced column under table-layout: fixed).
+ */
+.wpmtm-wrap .wpmtm-repeater details[open] .wpmtm-advanced-panel {
+	position: static;
+	display: block;
+	box-sizing: border-box;
+	width: 220px;
+	max-width: 220px;
+	margin-top: 6px;
+	padding: 10px 12px;
+	border: 1px solid #dcdcde;
+	border-radius: 4px;
+	background: #f6f7f7;
+}
+
+.wpmtm-wrap .wpmtm-repeater .wpmtm-advanced-panel p {
+	margin: 0 0 8px;
+}
+
+.wpmtm-wrap .wpmtm-repeater .wpmtm-advanced-panel p:last-child {
+	margin-bottom: 0;
+}
+
+.wpmtm-wrap .wpmtm-repeater .wpmtm-advanced-panel label {
+	display: block;
+}
+
+.wpmtm-wrap .wpmtm-repeater template {
+	display: none;
+}
+
+.wpmtm-wrap .notice.inline {
+	margin: 16px 0;
+}
+
+.wpmtm-wrap .wpmtm-etr-warnings {
+	background: #fcf9e8;
+	border-left: 4px solid #dba617;
+	padding: 8px 12px;
+	margin: 0 0 16px;
+}
+
+.wpmtm-wrap .wpmtm-etr-warnings li {
+	margin: 4px 0;
+}
+
+.wpmtm-wrap .wpmtm-etr-row-warning {
+	background: #fcf9e8;
+	border-left: 4px solid #dba617;
+	padding: 6px 10px;
+	margin: 8px 0 0;
+}
+
+.wpmtm-wrap .wpmtm-export-errors {
+	background: #fcf0f1;
+	border-left-color: #d63638;
+}
+
+/* Players editor avatar column (FIX 4): 32px, smaller than the 40px front-end
+   chip, to fit a dense repeater row alongside the other columns. */
+.wpmtm-wrap .wpmtm-col-photo {
+	width: 40px;
+}
+
+.wpmtm-wrap .wpmtm-avatar-cell {
+	width: 40px;
+	text-align: center;
+}
+
+.wpmtm-wrap .wpmtm-avatar {
+	display: block;
+	width: 32px;
+	height: 32px;
+	border-radius: 50%;
+	object-fit: cover;
+}
+
+/* Guided TD walkthrough (includes/class-wpmtm-wizard.php). Theme-neutral
+ * WordPress admin blues/greys, matching core notice styling rather than any
+ * front-end theme color. */
+.wpmtm-wizard-card {
+	border-left-color: #2271b1;
+	padding: 14px 16px 16px;
+	margin-top: 16px;
+}
+
+.wpmtm-wizard-heading {
+	margin: 0 0 8px;
+	font-size: 14px;
+	text-transform: uppercase;
+	letter-spacing: 0.04em;
+	color: #2271b1;
+}
+
+.wpmtm-wizard-progress {
+	margin: 0 0 6px;
+	font-weight: 600;
+	color: #1d2327;
+}
+
+.wpmtm-wizard-dots {
+	margin: 0 0 12px;
+	line-height: 1;
+}
+
+.wpmtm-wizard-dot {
+	display: inline-block;
+	width: 10px;
+	height: 10px;
+	margin-right: 6px;
+	border-radius: 50%;
+	border: 1px solid #8c8f94;
+	background: transparent;
+}
+
+.wpmtm-wizard-dot.is-active {
+	background: #2271b1;
+	border-color: #2271b1;
+}
+
+.wpmtm-wizard-line {
+	margin: 0 0 8px;
+	color: #1d2327;
+}
+
+.wpmtm-wizard-actions {
+	margin: 12px 0 0;
+}
+
+.wpmtm-wizard-actions .button-primary {
+	margin-right: 12px;
+}
+
+.wpmtm-wizard-exit {
+	color: #787c82;
+	text-decoration: underline;
+}
+
+.wpmtm-wizard-offer p {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 10px;
+	margin: 0.5em 0;
+}
+
+.wpmtm-wizard-offer-dismiss {
+	color: #787c82;
+	text-decoration: underline;
+}
+
+/* Change 6: Lock/unlock control on the Edit Tournament screen. Matches
+ * wp-etr's .etr-btn (assets/etr-registrations.css) - the closest existing
+ * icon-capable button in wp-etr/wp-etecf, since neither ships a dedicated
+ * mailto/email icon button (see render_lock_control()'s docblock in
+ * includes/class-wpmtm-admin.php for what was checked). display: inline-flex
+ * + align-items: center + a fixed height are this rule's own addition on
+ * top of that - the standard "emoji height fix" so the Unicode lock glyph
+ * does not enlarge the row (some fonts give symbol/emoji glyphs extra
+ * line-height that a plain text button's line-height does not have).
+ */
+.wpmtm-lock-control {
+	margin: 8px 0 16px;
+}
+
+.wpmtm-lock-btn {
+	display: inline-flex;
+	align-items: center;
+	height: 1.87rem;
+	padding: 0 0.9em;
+	font-size: 0.85rem;
+	font-weight: 600;
+	line-height: 1;
+	color: #222;
+	background: #f3f3f3;
+	border: 1px solid #cfcfcf;
+	border-radius: 4px;
+	cursor: pointer;
+	text-decoration: none;
+}
+
+.wpmtm-lock-btn:hover,
+.wpmtm-lock-btn:focus-visible {
+	background: #e9e9e9;
+	color: #000;
+}

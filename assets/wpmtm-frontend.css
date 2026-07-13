@@ -1,0 +1,257 @@
+/* Tournament Manager front-end results/standings + TD round-entry panel */
+
+.wpmtm-frontend-results,
+.wpmtm-td-panel {
+	margin: 24px 0;
+}
+
+.wpmtm-standings-table,
+.wpmtm-score-group,
+.wpmtm-boards-table,
+.wpmtm-byes-table {
+	width: 100%;
+	border-collapse: collapse;
+	margin: 8px 0 20px;
+}
+
+/* Cell borders/padding/alignment for these four tables now come entirely
+   from the shared .wpmtm-table rule below (every render call site that
+   uses one of these four classes also adds wpmtm-table) - keeping the
+   ETR-style border-bottom-only look free of a leftover full #ddd border
+   on the other three sides. */
+
+.wpmtm-score-group caption {
+	text-align: left;
+	font-weight: 600;
+	padding: 6px 0;
+}
+
+.wpmtm-td-panel {
+	padding-top: 16px;
+}
+
+.wpmtm-td-section-panel {
+	margin-bottom: 32px;
+}
+
+.wpmtm-round-selector a {
+	margin-right: 6px;
+}
+
+.wpmtm-round-selector strong {
+	margin-right: 6px;
+	text-decoration: underline;
+}
+
+.wpmtm-col-num {
+	width: 3em;
+	color: #787c82;
+	text-align: center;
+}
+
+.wpmtm-boards-table select {
+	max-width: 100%;
+}
+
+.wpmtm-boards-table template {
+	display: none;
+}
+
+.wpmtm-suggest-pairings {
+	margin: 8px 0;
+}
+
+.wpmtm-suggest-notes {
+	margin: 8px 0;
+}
+
+/* Change 4: front-end approximation of wp-admin's .notice-success (that
+   stylesheet is not loaded here - this is a public/front-end panel, not
+   /wp-admin/), shown above the round-entry form once a suggestion has
+   actually been loaded onto the boards below. */
+.wpmtm-suggest-success {
+	margin: 0 0 16px;
+	padding: 8px 12px;
+	background: #f0f6ec;
+	border-left: 4px solid #00a32a;
+}
+
+.wpmtm-wall-chart {
+	margin: 8px 0 20px;
+}
+
+/* Bare per-section wall chart inside wp-etr's "Wall chart" tab (no
+   <details> wrapper there - the tab itself is the disclosure; see
+   WPMTM_Frontend_Public::render_wall_chart_only()). */
+.wpmtm-wall-chart-section {
+	margin: 0 0 24px;
+}
+
+.wpmtm-wall-chart summary {
+	cursor: pointer;
+	font-weight: 600;
+}
+
+.wpmtm-wall-chart-table {
+	width: 100%;
+	border-collapse: collapse;
+	margin: 8px 0 0;
+}
+
+/* Cell borders/padding/alignment come from the shared .wpmtm-table rule
+   below - see the comment above the standings/score-group/boards/byes
+   selector for why. */
+
+.wpmtm-wall-chart-running {
+	color: #787c82;
+	font-size: 0.9em;
+}
+
+.wpmtm-col-photo {
+	width: 48px;
+}
+
+.wpmtm-avatar-cell {
+	width: 48px;
+	text-align: center;
+}
+
+.wpmtm-avatar {
+	display: block;
+	width: 40px;
+	height: 40px;
+	border-radius: 50%;
+	object-fit: cover;
+}
+
+/* Change 4: shared ETR-style look (mirrors wp-etr's assets/etr-
+   registrations.css .etr-table) for the standings, wall chart, pairing
+   aid (score-group), byes, and boards tables. Every render call site for
+   those five tables adds this class alongside its own. */
+.wpmtm-table {
+	width: 100%;
+	border-collapse: collapse;
+}
+
+.wpmtm-table th,
+.wpmtm-table td {
+	text-align: left;
+	padding: 0.5em 0.75em;
+	vertical-align: top;
+	border-bottom: 1px solid #e5e5e5;
+}
+
+.wpmtm-table thead th {
+	border-bottom: 2px solid #ccc;
+	font-size: 0.8em;
+	text-transform: uppercase;
+	letter-spacing: 0.03em;
+	color: #666;
+}
+
+/* Change 5: Print toolbar on the Wall chart tab, styled to match wp-etr's
+   .etr-toolbar / .etr-btn (assets/etr-registrations.css) - parity with
+   ETR's own public Print button. assets/wpmtm-frontend.js binds the
+   click on [data-wpmtm-print] to window.print(). */
+.wpmtm-toolbar {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 0.4rem;
+	margin: 0 0 1.25em;
+}
+
+.wpmtm-btn {
+	display: inline-block;
+	padding: 0.4em 0.9em;
+	font-size: 0.85rem;
+	font-weight: 600;
+	line-height: 1.4;
+	color: #222;
+	background: #f3f3f3;
+	border: 1px solid #cfcfcf;
+	border-radius: 4px;
+	cursor: pointer;
+	text-decoration: none;
+}
+
+.wpmtm-btn:hover,
+.wpmtm-btn:focus-visible {
+	background: #e9e9e9;
+	color: #000;
+}
+
+/* Change 6: "Final" badge next to the Standings heading, and the Round
+   entry tab's locked banner, both shown only once a tournament is locked. */
+.wpmtm-final-badge {
+	display: inline-block;
+	padding: 1px 8px;
+	margin-left: 6px;
+	border-radius: 3px;
+	background: #f0f0f1;
+	color: #50575e;
+	font-size: 0.6em;
+	font-weight: 700;
+	text-transform: uppercase;
+	letter-spacing: 0.04em;
+	vertical-align: middle;
+}
+
+.wpmtm-locked-banner {
+	margin: 0 0 16px;
+	padding: 10px 14px;
+	background: #fcf0f1;
+	border-left: 4px solid #d63638;
+}
+
+.wpmtm-locked-banner p {
+	margin: 4px 0;
+}
+
+@media print {
+	.wpmtm-toolbar,
+	.no-print {
+		display: none !important;
+	}
+
+	.wpmtm-standings-table,
+	.wpmtm-wall-chart-table,
+	.wpmtm-score-group,
+	.wpmtm-byes-table,
+	.wpmtm-boards-table,
+	.wpmtm-withdrawn-list {
+		border-collapse: collapse;
+	}
+
+	.wpmtm-standings-table th,
+	.wpmtm-standings-table td,
+	.wpmtm-wall-chart-table th,
+	.wpmtm-wall-chart-table td,
+	.wpmtm-score-group th,
+	.wpmtm-score-group td,
+	.wpmtm-byes-table th,
+	.wpmtm-byes-table td,
+	.wpmtm-boards-table th,
+	.wpmtm-boards-table td,
+	.wpmtm-withdrawn-list th,
+	.wpmtm-withdrawn-list td {
+		border: 1px solid #000;
+	}
+
+	/* Change 3: the Round entry tab now has its own "Print pairing sheet"
+	   button (WPMTM_Frontend_TD::render_section_td_panel()), so
+	   .wpmtm-td-panel can no longer be blanket-hidden on print the way it
+	   was before that button existed - doing so would leave the button's
+	   own tab printing a blank page. wp-etr's own tab markup already keeps
+	   an inactive tab's content out of the DOM's visible flow (and so out
+	   of print) when Standings/Wall chart's Print buttons are used instead,
+	   so nothing further is needed here to keep those two printouts free of
+	   the round-entry form.
+	*/
+
+	/* Owner requirement: printed pages include photos - avatars stay
+	   visible on print, just smaller to save space in the printed table. */
+	.wpmtm-avatar {
+		width: 32px;
+		height: 32px;
+	}
+}
