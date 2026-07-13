@@ -4,7 +4,7 @@ A free, truly open-source WordPress plugin for running club-level USCF tournamen
 
 No monthly fees and no desktop software needed! You can actually run entire rated and unrated tournaments from your phone using your existing WordPress login.
 
-Tournament Manager was built for the [McMinnville Chess Club](https://macchess.org) as a free, truly open-source alternative to online and desktop tournament software, and it's been generalized for clubs that want tournament management on their own WordPress site with unlimited tournaments and unlimited players.
+Tournament Manager was built for the [McMinnville Chess Club](https://macchess.org) as an alternative to online and desktop tournament software, and it's been generalized for clubs that want tournament management on their own WordPress site with unlimited tournaments and unlimited players.
 
 If you find this plugin useful, consider [making a donation](https://macchess.org/donate) to the McMinnville Chess Club!
 
