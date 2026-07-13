@@ -1,8 +1,8 @@
 # Tournament Manager
 
-A free, truly open-source WordPress plugin for running club-level USCF tournaments end to end: setup guide, roster import, a pairing aid, round-by-round result entry, standings with USCF tiebreaks, and USCF DBF export for upload to [ratings.uschess.org](https://ratings.uschess.org).
+A free, truly open-source WordPress plugin for running club-level USCF chess tournaments end to end: setup guide, roster import, pairing aid, round-by-round result entry, standings with USCF tiebreaks, and USCF DBF export for upload to [ratings.uschess.org](https://ratings.uschess.org).
 
-No monthly fees and no desktop software needed! You can actually run entire rated and unrated tournaments from your phone using your existing WordPress login.
+No monthly fees and no desktop software needed. You can actually run entire rated and unrated tournaments from your phone using your existing WordPress login.
 
 Tournament Manager was built for the [McMinnville Chess Club](https://macchess.org) as an alternative to online and desktop tournament software, and it's been generalized for clubs that want tournament management on their own WordPress site with unlimited tournaments and unlimited players.
 
@@ -130,11 +130,17 @@ The moment that event registrations are imported into Tournament Manager, no new
 
 Registrations are viewable / editable by the person who paid during registration (perfect for parents), and this is managed by ETECF outside of Tournament Manager. Note that registration data edited *after* event registrations have been imported by CSV or the "Import into Tournament Manager" button *do* get saved but those changes are reflected in ETR and not in Tournament Manager post-import.
 
+**The USCF export worked, but importing to USCF doesn't**
+
+Check that all players in rated sections have active USCF memberships and that your **club's affiliate ID**, your **TD's USCF membership**, and your **TD's Safe Play certifications** are active and up to date. If any of these are incorrect or expired, the USCF import won't work. According to USCF guidelines, a player's USCF membership must be active *up to and including* the date of the last day of your tournament.
+
+This can be a show-stopper, so manually check your club and TD status and verify your registrants' USCF memberships on the event's "Registrations" tab *before* importing them into Tournament Manager. I might add checks in the future to validate the club affiliate ID, player and TD USCF membership status, and current Safe Play certifications, but the USCF MUIR API v1 is unsupported and v2 is supposedly coming in late Summer, 2026. What a fun time for tournament software developers!
+
 **I don't know what is happening, what just happened, or what to do next**
 
-Welcome to the party! Tournament Manager explains things in admin notices, so you might not see them if you have notices hidden with a third-party plugin like [Admin & Site Enhancements](https://wordpress.org/plugins/admin-site-enhancements/). On the upside, you can enable a third-party plugin like ASE to hide notices if you no longer wish to see them. I recommend something like [Unnotifier](https://wordpress.org/plugins/unnotifier/) to dismiss individual notices rather than the all or nothing approach like what's in ASE and others.
+Tournament Manager explains things as you go in admin notices, so you might not see them if you have notices hidden with a third-party plugin like [Admin & Site Enhancements](https://wordpress.org/plugins/admin-site-enhancements/). On the upside, you can enable a third-party plugin like ASE to hide notices if you no longer wish to see them. I recommend something like [Unnotifier](https://wordpress.org/plugins/unnotifier/) to dismiss individual notices rather than the all or nothing method that ASE and others use.
 
-There's also an optional setup guide that will walk you through setting up and managing a tournament. (This is still a work-in-progress, and feedback is welcome.) If you accidentally dismissed the setup guide admin notice, click the "Show setup guide" button in Tournament Manager Settings for it to reappear.
+There's also an optional setup guide that will walk you through setting up and managing a tournament. (This is still a work-in-progress, and [feedback is welcome](https://github.com/christefano/wp-tournament-manager/issues).) If you accidentally dismissed the setup guide admin notice, click the "Show setup guide" button in Tournament Manager Settings for it to reappear.
 
 ## Data
 
