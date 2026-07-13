@@ -73,10 +73,12 @@ The "Import to Tournament Manager" button on ETR's "Registrations" tab needs ETR
 - Players imported from a CSV or with no photo on file get a neutral silhouette instead.
 - A new tournament created from an event defaults the "Show profile pictures" toggle to match that event's own "Show photos" setting.
 
-**Cache-aware**
+**Performance**
 
-- Every write that changes what the public sees (a saved round, a withdrawal, a settings change) flushes that event page across whichever page-cache plugin is active (W3 Total Cache, WP Super Cache, WP Rocket, and LiteSpeed Cache).
-- TD-only pages are marked so they are never cached publicly.
+- Everything the public sees (a saved round, a withdrawal, a settings change) flushes that event page across whichever page caching plugin is active (W3 Total Cache, WP Super Cache, WP Rocket, and LiteSpeed Cache).
+- TD-only pages are never cached. The public always sees a cached page when using a compatible caching plugin.
+- Using ETR's "Demo mode", Tournament Manager has been performance tested up to 200 players with 5 rounds. In a test with 100 players and 5 rounds, database queries were under 10ms (40ms for the USCF export), memory around 2MB, and page size was just 81KB.
+- Note that putting hundreds of players in the same section will have a performance cost for TDs. Tournaments don't really ever have mega sections, though, so this would never happen in reality.
 
 **Permissions**
 
