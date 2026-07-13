@@ -19,7 +19,7 @@ Tournament Manager runs stand-alone for manual tournament administration, but fo
 - [Event Tickets Extra Custom Fields](https://github.com/christefano/wp-etecf) (ETECF)
 - [Event Tickets Registrations](https://github.com/christefano/wp-etr) (ETR)
 
-Tournament Manager pulls in a club's existing online registration from ET (enhanced with extra costom fields from ETECF) and straight into a tournament manager with sections, airings, wall charts, standings, and final results. 
+Tournament Manager pulls in a club's existing online registration from ET (enhanced with extra custom fields from ETECF) and straight into a tournament manager with sections, airings, wall charts, standings, and final results. 
 
 The "Import to Tournament Manager" button on ETR's "Registrations" tab needs ETR 5.2.3 or later. Older ETR versions will still work with Tournament Manager but only through the manual CSV upload.
 
