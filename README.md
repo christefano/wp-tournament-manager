@@ -23,8 +23,6 @@ Tournament Manager runs stand-alone for manual tournament administration, but fo
 
 Tournament Manager pulls in a club's existing online registration from ET (enhanced with extra custom fields from ETECF) and straight into a tournament manager with sections, pairings, wall charts, standings, and final results. 
 
-The "Import to Tournament Manager" button on ETR's "Registrations" tab needs ETR 5.2.3 or later. Older ETR versions will still work with Tournament Manager but only through the manual CSV upload.
-
 ## Features
 
 **Registration import**
@@ -147,6 +145,10 @@ Registrations are viewable / editable by the person who paid during registration
 Check that all players in rated sections have active USCF memberships and that your **club's affiliate ID**, your **TD's USCF membership**, and your **TD's Safe Play certifications** are active and up to date. If any of these are incorrect or expired, the USCF import won't work. According to USCF guidelines, a player's USCF membership must be active *up to and including* the date of the last day of your tournament.
 
 This can be a show-stopper, so manually check your club and TD status and verify your registrants' USCF memberships on the event's "Registrations" tab *before* importing them into Tournament Manager. I might add checks in the future to validate the club affiliate ID, player and TD USCF membership status, and current Safe Play certifications, but the USCF MUIR API v1 is unsupported and v2 is supposedly coming in late Summer, 2026. What a fun time for tournament software developers!
+
+**The "Import to Tournament Manager" is missing**
+
+The "Import to Tournament Manager" button on ETR's "Registrations" tab needs ETR 5.2.3 or later. Older ETR versions will still work with Tournament Manager but only through the manual CSV upload.
 
 **I don't know what is happening, what just happened, or what to do next**
 
