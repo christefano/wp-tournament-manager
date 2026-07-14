@@ -31,7 +31,7 @@ The "Import to Tournament Manager" button on ETR's "Registrations" tab needs ETR
 
 - Bring a roster in from ETR's "Pairing export" CSV, uploaded by hand, or (with ETR 5.2.3+) pulled straight over with one click with the "Import to Tournament Manager" button on the event's "Registrations" tab.
 - Players marked "No-show" (in advance of the import) on their player card in ETR are skipped.
-- A USCF ID with anything non-numeric (like a parent requesting a new USCF ID for a youth player) is imported with a blank member ID and a alerts the TD to fill it in once USCF issues their new membership.
+- A USCF ID with anything non-numeric (like a parent requesting a new USCF ID for youth player) is imported with a blank member ID and a alerts the TD to fill it in once USCF issues their new membership.
 - Exact-duplicate rows import just once with a warning instead of doubling a player up. The preview page shows every detected section with create-new / map-to-existing / skip choices and a rated toggle before anything is saved, and the importer warns before a re-import would append onto a section that already has players.
 - Sections can be marked rated or unrated individually, and an oversized section can be auto-split into 4-player round robin quads at import time.
 
