@@ -31,7 +31,7 @@ The "Import to Tournament Manager" button on ETR's "Registrations" tab needs ETR
 
 - Bring a roster in from ETR's "Pairing export" CSV, uploaded by hand, or (with ETR 5.2.3+) pulled straight over with one click with the "Import to Tournament Manager" button on the event's "Registrations" tab.
 - Players marked "No-show" (in advance of the import) on their player card in ETR are skipped.
-- A USCF ID with anything non-numeric (like a parent requesting a new USCF ID for youth player) is imported with a blank member ID and a alerts the TD to fill it in once USCF issues their new membership.
+- A USCF ID with anything non-numeric (like a parent requesting a new USCF ID for a youth player) is imported with a blank member ID and a alerts the TD to fill it in once USCF issues their new membership.
 - Exact-duplicate rows import just once with a warning instead of doubling a player up. The preview page shows every detected section with create-new / map-to-existing / skip choices and a rated toggle before anything is saved, and the importer warns before a re-import would append onto a section that already has players.
 - Sections can be marked rated or unrated individually, and an oversized section can be auto-split into 4-player round robin quads at import time.
 
@@ -85,9 +85,31 @@ The "Import to Tournament Manager" button on ETR's "Registrations" tab needs ETR
 - All tournament admin pages require the `wpmtm_manage_tournaments` permission, and administrators are granted automatically on activation.
 - The Settings page requires the `manage_options` permission.
 
+## Screenshots
+
+A quick tour of a tournament with test data - from setup to USCF upload. Click any image for the full-size version.
+
+[![Tournament Manager Settings](screenshots/tm-settings.png)](screenshots/tm-settings.png) _Settings - USCF affiliate ID, chief and assistant TD member IDs, default city / state / ZIP, time control presets, the delete-on-uninstall switch, and the optional "Tournament Manager" role for a volunteer TD._
+
+[![Registration import preview](screenshots/registration-import.png)](screenshots/registration-import.png) _Import preview - every detected section with its own rated toggle, a split-into-quads option, and create-new / map-to-existing / skip actions. Nothing is written until you confirm, and re-importing onto a section that already has players is flagged._
+
+[![Section types](screenshots/section-types.png)](screenshots/section-types.png) _Sections editor - each section carries its own rating system (Swiss, Round Robin, or Quad), time control, round count, and rated flag, so one event can mix rated and unrated sections._
+
+[![Sections roster management](screenshots/sections-player-management.png)](screenshots/sections-player-management.png) _Sections editor's Manage registrants - Preview and optionally edit the roster, change Withdrawn status, and show Family name first everywhere a name is displayed._
+
+[![Pairing aid](screenshots/pairing-aid.png)](screenshots/pairing-aid.png) _Pairing aid - score groups with the color due and the opponents already played, so a TD can pair each round by hand from the top down (or let "Suggest pairings" do it)._
+
+[![Round entry](screenshots/round-entry.png)](screenshots/round-entry.png) _Round entry - set each board's result, assign a bye, or withdraw a player. Saving a round replaces that round's results outright and updates the standings immediately._
+
+[![Standings](screenshots/standings.png)](screenshots/standings.png) _Standings - Standings with all four US Chess 34E tiebreaks in order (Modified Median, Solkoff, Cumulative, Cumulative of Opposition), shown live on the event page._
+
+[![Wall chart](screenshots/wall-chart.png)](screenshots/wall-chart.png) _Wall chart - each player's opponent and result with a running score, round by round._
+
+[![USCF export](screenshots/uscf-export.png)](screenshots/uscf-export.png) _USCF export - a readiness report validates the rated sections first, then downloads the three-DBF zip (THEXPORT / TSEXPORT / TDEXPORT) ready to upload to ratings.uschess.org._
+
 ## Installation
 
-1. Upload the plugin to `wp-content/plugins/wp-tournament-manager` (or install the zip through Plugins > Add New > Upload Plugin).
+1. Get Tournament Manager from the [releases](https://github.com/christefano/wp-tournament-manager/releases) page, and upload the plugin to `wp-content/plugins/wp-tournament-manager` (or install the zip through Plugins > Add New > Upload Plugin).
 2. Activate it. Activation creates the plugin's database tables and grants the `wpmtm_manage_tournaments` permission to administrators.
 3. If you plan to run rated events, visit Tournament Manager > Settings and enter your club's USCF affiliate ID and TD member IDs before your first export.
 
@@ -96,27 +118,17 @@ The "Import to Tournament Manager" button on ETR's "Registrations" tab needs ETR
 First, an event for the tournament needs to be created (using The Events Calendar, or TEC) and tickets and registrations need to be enabled for it (using Event Tickets, further enhanced by ETECF). Then a typical TD's first tournament, start to finish, goes like this:
 
 1. **Settings**
-
 - Tournament Manager > Settings: set the affiliate ID and TD IDs (rated events only), default city / state / ZIP, and time control presets so you don't retype them per section.
-
 2. **Create a tournament**
-
 - Add a tournament, link it to the event's page, and set rated / unrated and confirm its date range. This is what turns on the pairing aid, wall charts, results, and standings on the event page itself.
-
 3. **Import the roster**
-
 - Click "Import to Tournament Manager" right on the event's "Registrations" tab, or upload ETR's "Pairing export" CSV in the tournament's edit page. Review the preview (sections, rated flags, no-shows skipped, any blank USCF IDs) and confirm.
-
+- A "Family name first" option is available to reverse the display of First and Last names for individual registrants.
 4. **Enter rounds**
-
 - On the event's page, use the pairing aid under the "Round entry" tab to pair each round either by hand or with the "Suggest pairings" link, then enter results (or byes or a withdrawal) and save. Standings are updated immediately for anyone viewing the page. The "Suggest pairings" link pairs all the players and populates the pairing aid for you to review, modify, and save. Pairings are determined by closeness in rating, and a player is never paired against the same player twice.
-
 5. **Check standings**
-
 - The event page shows live standings with tiebreaks under the "Sandings" tab.
-
 6. **Export**
-
 - For rated tournaments, the tournament's edit page runs a readiness report. Review errors and warnings (e.g. a registrant's USCF ID is missing due to them registering before getting one). Errors block the download and warnings don't.
 - Once it's error-free, download the DBF zip. Upload the zip file's three DBF files at the USCF TD / Affiliate area at [ratings.uschess.org](https://ratings.uschess.org).
 
