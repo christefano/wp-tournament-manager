@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Tournament Manager
  * Description: Club-level USCF chess tournament management: setup guide, roster import, pairing aid, round results, standings, and USCF DBF export.
- * Version: 1.0.1
+ * Version: 1.1
  * Author: Christefano Reyes
  * Plugin URI: https://github.com/christefano/wp-tournament-manager
  * Author URI: https://macchess.org
@@ -18,7 +18,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'WPMTM_VERSION', '1.0.1' );
+define( 'WPMTM_VERSION', '1.1' );
 define( 'WPMTM_PLUGIN_FILE', __FILE__ );
 define( 'WPMTM_PLUGIN_DIR', plugin_dir_path( __FILE__ ) );
 define( 'WPMTM_PLUGIN_URL', plugin_dir_url( __FILE__ ) );
@@ -43,6 +43,7 @@ require_once WPMTM_PLUGIN_DIR . 'includes/class-wpmtm-tiebreaks.php';
 require_once WPMTM_PLUGIN_DIR . 'includes/class-wpmtm-pairing-aid.php';
 require_once WPMTM_PLUGIN_DIR . 'includes/class-wpmtm-pairing-suggest.php';
 require_once WPMTM_PLUGIN_DIR . 'includes/class-wpmtm-round-entry.php';
+require_once WPMTM_PLUGIN_DIR . 'includes/class-wpmtm-round-selector.php';
 require_once WPMTM_PLUGIN_DIR . 'includes/class-wpmtm-export-builder.php';
 require_once WPMTM_PLUGIN_DIR . 'includes/class-wpmtm-name.php';
 
@@ -55,6 +56,10 @@ require_once WPMTM_PLUGIN_DIR . 'includes/class-wpmtm-plugin.php';
 require_once WPMTM_PLUGIN_DIR . 'includes/trait-wpmtm-admin-shared.php';
 require_once WPMTM_PLUGIN_DIR . 'includes/class-wpmtm-settings.php';
 require_once WPMTM_PLUGIN_DIR . 'includes/class-wpmtm-etr-import.php';
+// Mixed class like WPMTM_ETR_Import: pure/static USCF status verdict logic
+// (unit-tested by tests/run-tests.php) plus a WordPress-layer HTTP client
+// and admin-ajax handlers.
+require_once WPMTM_PLUGIN_DIR . 'includes/class-wpmtm-uscf-status.php';
 require_once WPMTM_PLUGIN_DIR . 'includes/class-wpmtm-admin.php';
 require_once WPMTM_PLUGIN_DIR . 'includes/class-wpmtm-admin-import.php';
 require_once WPMTM_PLUGIN_DIR . 'includes/class-wpmtm-admin-export.php';
@@ -85,5 +90,6 @@ add_action( 'plugins_loaded', function () {
 	WPMTM_Admin_Import::instance();
 	WPMTM_Admin_Export::instance();
 	WPMTM_Wizard::instance();
+	WPMTM_USCF_Status::instance();
 	WPMTM_Frontend::instance();
 } );

@@ -1,5 +1,5 @@
 /* Tournament Manager admin screens - vanilla JS, no dependencies.
- * Five small behaviors:
+ * Six small behaviors:
  *   1. Repeater tables (sections editor, players editor): "+ Add row"
  *      clones a <template> row with fresh field names; "Remove" either
  *      drops an unsaved row from the DOM or flags an existing row for
@@ -26,6 +26,15 @@
  *      field is currently empty, so it never clobbers a date the TD already
  *      typed in (including on Edit, where both fields already hold the
  *      saved tournament's dates).
+ *   6. "Validate TDs" button (docs/SPEC.md, 2026-07-14, USCF status
+ *      validation): a [data-wpmtm-validate-tds] click (Settings page and
+ *      tournament edit page) POSTs admin-ajax action=wpmtm_validate_tds
+ *      and renders one result row each for the affiliate, the Chief TD,
+ *      and the Assistant TD (when set) into the adjacent
+ *      [data-wpmtm-validate-tds-results] container. Strings come from the
+ *      wpmtmValidateTds object WPMTM_Admin::enqueue_assets() localizes;
+ *      all response data lands in the DOM via textContent, never
+ *      innerHTML.
  */
 ( function () {
 	'use strict';
@@ -169,6 +178,122 @@
 		if ( select && select.id === 'wpmtm-event-post-id' ) {
 			fillLinkedEventDates( select );
 		}
+	} );
+
+	// Behavior 6: "Validate TDs" (see the header comment above).
+	function appendValidateCell( row, tag, lines, className ) {
+		var cell = document.createElement( tag );
+		if ( className ) {
+			cell.className = className;
+		}
+		( Array.isArray( lines ) ? lines : [ lines ] ).forEach( function ( line, index ) {
+			if ( index > 0 ) {
+				cell.appendChild( document.createElement( 'br' ) );
+			}
+			cell.appendChild( document.createTextNode( line ) );
+		} );
+		row.appendChild( cell );
+		return cell;
+	}
+
+	function joinParts( parts ) {
+		return parts.filter( function ( p ) {
+			return p !== '' && p !== null && typeof p !== 'undefined';
+		} ).join( ' ' );
+	}
+
+	function renderTdResults( container, data, i18n ) {
+		container.textContent = '';
+
+		var note = document.createElement( 'p' );
+		note.className = 'description';
+		note.textContent = i18n.throughNote.replace( '%s', data.through || '' );
+		container.appendChild( note );
+
+		var table = document.createElement( 'table' );
+		table.className = 'widefat striped wpmtm-validate-table';
+
+		var thead   = document.createElement( 'thead' );
+		var headRow = document.createElement( 'tr' );
+		[ i18n.colRole, i18n.colUscfId, i18n.colName, i18n.colMembership, i18n.colTdCert, i18n.colSafePlay, i18n.colVerdict ].forEach( function ( label ) {
+			var th = document.createElement( 'th' );
+			th.scope = 'col';
+			th.textContent = label;
+			headRow.appendChild( th );
+		} );
+		thead.appendChild( headRow );
+		table.appendChild( thead );
+
+		var tbody = document.createElement( 'tbody' );
+		( data.rows || [] ).forEach( function ( r ) {
+			var row = document.createElement( 'tr' );
+			row.className = 'wpmtm-validate-row wpmtm-validate-row--' + String( r.verdict ).toLowerCase();
+			appendValidateCell( row, 'td', r.role );
+			appendValidateCell( row, 'td', r.member_id );
+			appendValidateCell( row, 'td', r.name );
+			appendValidateCell( row, 'td', joinParts( [ r.status, r.expiration ] ) );
+			// The affiliate row has no TD cert / Safe Play columns at all
+			// (its validate path never sets them), so both render blank.
+			appendValidateCell( row, 'td', joinParts( [ r.td_level, r.td_cert_status, r.td_cert_expiration ] ) );
+			appendValidateCell( row, 'td', r.safe_play_expiration || '' );
+			var verdictLines = [ r.verdict + ( r.reason ? ' - ' + r.reason : '' ) ];
+			if ( r.warn ) {
+				verdictLines.push( '(' + r.warn + ')' );
+			}
+			appendValidateCell( row, 'td', verdictLines, 'wpmtm-validate-verdict' );
+			tbody.appendChild( row );
+		} );
+		table.appendChild( tbody );
+		container.appendChild( table );
+	}
+
+	document.addEventListener( 'click', function ( e ) {
+		var btn = e.target.closest ? e.target.closest( '[data-wpmtm-validate-tds]' ) : null;
+		if ( ! btn || btn.disabled || typeof window.wpmtmValidateTds === 'undefined' ) {
+			return;
+		}
+		e.preventDefault();
+
+		var i18n     = window.wpmtmValidateTds;
+		var original = btn.textContent;
+		btn.disabled = true;
+		btn.textContent = i18n.checking;
+
+		var scope     = ( btn.closest ? btn.closest( 'td' ) : null ) || btn.parentNode;
+		var container = scope.querySelector( '[data-wpmtm-validate-tds-results]' );
+		if ( ! container ) {
+			container = document.createElement( 'div' );
+			container.setAttribute( 'data-wpmtm-validate-tds-results', '' );
+			btn.parentNode.insertBefore( container, btn.nextSibling );
+		}
+
+		var body = 'action=wpmtm_validate_tds'
+			+ '&context=' + encodeURIComponent( btn.getAttribute( 'data-context' ) || 'settings' )
+			+ '&nonce=' + encodeURIComponent( btn.getAttribute( 'data-nonce' ) || '' );
+		var tournament = btn.getAttribute( 'data-tournament' );
+		if ( tournament ) {
+			body += '&tournament=' + encodeURIComponent( tournament );
+		}
+
+		fetch( window.ajaxurl, {
+			method: 'POST',
+			credentials: 'same-origin',
+			headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+			body: body
+		} ).then( function ( response ) {
+			return response.json();
+		} ).then( function ( json ) {
+			if ( json && json.success && json.data ) {
+				renderTdResults( container, json.data, i18n );
+			} else {
+				container.textContent = ( json && json.data && json.data.message ) ? json.data.message : i18n.requestFailed;
+			}
+		} ).catch( function () {
+			container.textContent = i18n.requestFailed;
+		} ).then( function () {
+			btn.disabled = false;
+			btn.textContent = original;
+		} );
 	} );
 
 	document.addEventListener( 'submit', function ( e ) {
