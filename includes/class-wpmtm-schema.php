@@ -20,7 +20,7 @@ class WPMTM_Schema {
 	 * Bump whenever the CREATE TABLE statements below change; maybe_upgrade()
 	 * re-runs dbDelta when the stored option differs from this value.
 	 */
-	const DB_VERSION = '0.1.8';
+	const DB_VERSION = '0.1.7';
 
 	/** Allowed wpmtm_games.result values. */
 	const GAME_RESULTS = array( 'W', 'B', 'D', 'FW', 'FB', 'FD' );
@@ -163,7 +163,6 @@ class WPMTM_Schema {
 			photo_id bigint(20) unsigned DEFAULT NULL,
 			withdrawn_after_round smallint(5) unsigned DEFAULT NULL,
 			family_name_first tinyint(1) unsigned NOT NULL DEFAULT 0,
-			family_key varchar(191) NULL,
 			PRIMARY KEY  (id),
 			UNIQUE KEY section_pair (section_id,pair_num),
 			KEY section_id (section_id)

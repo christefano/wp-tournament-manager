@@ -629,15 +629,6 @@ class WPMTM_Frontend_Public {
 				// call site, the same way 'photo_id' above is carried for
 				// render_avatar() - see this method's own docblock.
 				'family_name_first'     => (bool) $p->family_name_first,
-				// Family avoidance (docs/SPEC.md, 2026-07-14): per-player
-				// family key (wpmtm_players.family_key, DB_VERSION 0.1.8 -
-				// normalized parent email from ETR import, or a TD override
-				// from the roster editor), carried through the same way for
-				// WPMTM_Pairing_Suggest::same_family() to consume; null
-				// when unset, never an empty string, so same_family()'s
-				// "both non-empty" check works without this array needing
-				// its own null-coalescing.
-				'family_key'            => $p->family_key,
 			);
 		}
 		return $players;

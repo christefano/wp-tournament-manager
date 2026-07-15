@@ -122,27 +122,6 @@ class WPMTM_Admin {
 		}
 		wp_enqueue_style( 'wpmtm-admin', WPMTM_PLUGIN_URL . 'assets/wpmtm-admin.css', array(), WPMTM_VERSION );
 		wp_enqueue_script( 'wpmtm-admin', WPMTM_PLUGIN_URL . 'assets/wpmtm-admin.js', array(), WPMTM_VERSION, true );
-		// Strings for the "Validate TDs" button (the Settings page and the
-		// tournament edit page - both pass the wpmtm page-prefix gate
-		// above); see assets/wpmtm-admin.js behavior 6 and
-		// WPMTM_USCF_Status::ajax_validate_tds().
-		wp_localize_script(
-			'wpmtm-admin',
-			'wpmtmValidateTds',
-			array(
-				'checking'      => __( 'Checking...', 'wp-tournament-manager' ),
-				'requestFailed' => __( 'The validation request failed - try again.', 'wp-tournament-manager' ),
-				'colRole'       => __( 'Role', 'wp-tournament-manager' ),
-				'colUscfId'     => __( 'USCF ID', 'wp-tournament-manager' ),
-				'colName'       => __( 'Name', 'wp-tournament-manager' ),
-				'colMembership' => __( 'Membership', 'wp-tournament-manager' ),
-				'colTdCert'     => __( 'TD certification', 'wp-tournament-manager' ),
-				'colSafePlay'   => __( 'Safe Play', 'wp-tournament-manager' ),
-				'colVerdict'    => __( 'Verdict', 'wp-tournament-manager' ),
-				/* translators: %s: the "must be active through" date (YYYY-MM-DD) */
-				'throughNote'   => __( 'Checked as active through %s.', 'wp-tournament-manager' ),
-			)
-		);
 	}
 
 	// -----------------------------------------------------------------
@@ -313,10 +292,7 @@ class WPMTM_Admin {
 				<table class="form-table" role="presentation">
 					<tr>
 						<th scope="row"><label for="wpmtm-name"><?php esc_html_e( 'Name', 'wp-tournament-manager' ); ?></label></th>
-						<td>
-							<input type="text" id="wpmtm-name" class="regular-text" maxlength="35" name="name" value="<?php echo esc_attr( $name ); ?>" required>
-							<p class="description"><?php esc_html_e( 'Capped at 35 characters - the USCF export format\'s limit for the event name (H_NAME).', 'wp-tournament-manager' ); ?></p>
-						</td>
+						<td><input type="text" id="wpmtm-name" class="regular-text" name="name" value="<?php echo esc_attr( $name ); ?>" required></td>
 					</tr>
 					<tr>
 						<th scope="row"><?php esc_html_e( 'Rated', 'wp-tournament-manager' ); ?></th>
@@ -340,7 +316,7 @@ class WPMTM_Admin {
 					</tr>
 					<tr>
 						<th scope="row"><label for="wpmtm-city"><?php esc_html_e( 'City', 'wp-tournament-manager' ); ?></label></th>
-						<td><input type="text" id="wpmtm-city" class="regular-text" maxlength="21" name="city" value="<?php echo esc_attr( $city ); ?>" placeholder="<?php echo esc_attr( $opts['default_city'] ); ?>"></td>
+						<td><input type="text" id="wpmtm-city" class="regular-text" name="city" value="<?php echo esc_attr( $city ); ?>" placeholder="<?php echo esc_attr( $opts['default_city'] ); ?>"></td>
 					</tr>
 					<tr>
 						<th scope="row"><label for="wpmtm-state"><?php esc_html_e( 'State', 'wp-tournament-manager' ); ?></label></th>
@@ -364,18 +340,6 @@ class WPMTM_Admin {
 							<p class="description"><?php esc_html_e( 'Leave blank to use the club default from Tournament Manager Settings.', 'wp-tournament-manager' ); ?></p>
 						</td>
 					</tr>
-					<?php if ( $is_edit ) : ?>
-						<tr>
-							<th scope="row"><?php esc_html_e( 'USCF status', 'wp-tournament-manager' ); ?></th>
-							<td>
-								<button type="button" class="button" data-wpmtm-validate-tds data-context="tournament" data-tournament="<?php echo esc_attr( $tournament_id ); ?>" data-nonce="<?php echo esc_attr( wp_create_nonce( 'wpmtm_validate_tds' ) ); ?>">
-									<?php esc_html_e( 'Validate TDs', 'wp-tournament-manager' ); ?>
-								</button>
-								<p class="description"><?php esc_html_e( 'Checks the club affiliate ID from Settings plus the effective Chief and Assistant TD IDs (the overrides above when set, or the Settings defaults) against the USCF ratings API, as active through the tournament end date. Advisory only - nothing is blocked by the result. Checks use the saved values, so save the tournament first if you changed the IDs above.', 'wp-tournament-manager' ); ?></p>
-								<div data-wpmtm-validate-tds-results></div>
-							</td>
-						</tr>
-					<?php endif; ?>
 					<tr>
 						<th scope="row"><?php esc_html_e( 'Crosstable flag', 'wp-tournament-manager' ); ?></th>
 						<td>
@@ -840,7 +804,7 @@ class WPMTM_Admin {
 		?>
 		<tr<?php echo $is_template ? '' : ' data-existing-id="' . esc_attr( $key ) . '"'; ?>>
 			<td class="wpmtm-col-num"><?php echo $is_template ? esc_html__( 'auto', 'wp-tournament-manager' ) : esc_html( $sec_num ); ?></td>
-			<td><input type="text" maxlength="30" name="sections[<?php echo esc_attr( $key ); ?>][sec_name]" value="<?php echo esc_attr( $sec_name ); ?>" placeholder="<?php esc_attr_e( 'e.g. Open', 'wp-tournament-manager' ); ?>"></td>
+			<td><input type="text" name="sections[<?php echo esc_attr( $key ); ?>][sec_name]" value="<?php echo esc_attr( $sec_name ); ?>" placeholder="<?php esc_attr_e( 'e.g. Open', 'wp-tournament-manager' ); ?>"></td>
 			<td>
 				<select name="sections[<?php echo esc_attr( $key ); ?>][r_system]">
 					<?php
@@ -1067,9 +1031,6 @@ class WPMTM_Admin {
 				<p>
 					<?php esc_html_e( 'Family name first is for players whose culture puts the family name first (for example many East Asian names): check this so their name shows family name first everywhere in Tournament Manager. The Name field here still stores LAST,FIRST regardless; this flag only controls how that name is displayed.', 'wp-tournament-manager' ); ?>
 				</p>
-				<p>
-					<?php esc_html_e( 'Players sharing a family key, or sharing a last name, are not paired against each other when suggesting pairings (best effort). The family key is filled in automatically for ETR imports carrying a parent email; edit it here to clear a false positive (unrelated players who happen to share a surname still avoid each other by last name alone, regardless of family key) or to add a false negative (give siblings with different surnames the same key).', 'wp-tournament-manager' ); ?>
-				</p>
 			</div>
 
 			<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>">
@@ -1091,7 +1052,6 @@ class WPMTM_Admin {
 							<th><?php esc_html_e( 'Rating', 'wp-tournament-manager' ); ?></th>
 							<th><?php esc_html_e( 'Withdrawn', 'wp-tournament-manager' ); ?></th>
 							<th title="<?php echo esc_attr__( 'For players whose culture puts the family name first (for example many East Asian names); this only affects display, not how the name is stored.', 'wp-tournament-manager' ); ?>"><?php esc_html_e( 'Family name first', 'wp-tournament-manager' ); ?></th>
-							<th title="<?php echo esc_attr__( 'Players sharing a family key, or sharing a last name, are not paired against each other when suggesting pairings (best effort).', 'wp-tournament-manager' ); ?>"><?php esc_html_e( 'Family key', 'wp-tournament-manager' ); ?></th>
 							<th></th>
 						</tr>
 					</thead>
@@ -1122,7 +1082,6 @@ class WPMTM_Admin {
 		$withdrawn_after_round  = $is_template ? '' : $player->withdrawn_after_round;
 		$photo_id               = $is_template ? null : $player->photo_id;
 		$family_name_first      = $is_template ? false : (bool) $player->family_name_first;
-		$family_key             = $is_template ? '' : (string) $player->family_key;
 		$tot_rnds               = max( 0, (int) $tot_rnds );
 		?>
 		<tr<?php echo $is_template ? '' : ' data-existing-id="' . esc_attr( $key ) . '"'; ?>>
@@ -1164,7 +1123,6 @@ class WPMTM_Admin {
 					<span class="screen-reader-text"><?php esc_html_e( 'Family name first', 'wp-tournament-manager' ); ?></span>
 				</label>
 			</td>
-			<td><input type="text" class="small-text" name="players[<?php echo esc_attr( $key ); ?>][family_key]" value="<?php echo esc_attr( $family_key ); ?>"></td>
 			<td><button type="button" class="button-link-delete" data-remove-row><?php esc_html_e( 'Remove', 'wp-tournament-manager' ); ?></button></td>
 		</tr>
 		<?php
@@ -1214,16 +1172,6 @@ class WPMTM_Admin {
 			// is later rendered by WPMTM_Name.
 			$family_name_first = ! empty( $row['family_name_first'] ) ? 1 : 0;
 
-			// TD override for WPMTM_Pairing_Suggest::same_family()'s
-			// heuristics (docs/SPEC.md, 2026-07-14): free-text, not an
-			// email field, so sanitize_text_field() rather than
-			// sanitize_email() - a TD may type any shared token for
-			// siblings with different surnames, not necessarily an email
-			// address. Lowercase/trim so it compares the same way
-			// WPMTM_Pairing_Suggest::normalize_family_key() does; blank
-			// clears it back to NULL (no key).
-			$family_key = isset( $row['family_key'] ) ? strtolower( trim( sanitize_text_field( $row['family_key'] ) ) ) : '';
-
 			$is_existing = ctype_digit( (string) $key );
 
 			if ( '' === $name && ! $is_existing ) {
@@ -1237,9 +1185,8 @@ class WPMTM_Admin {
 				'rating'                => '' !== $rating ? $rating : null,
 				'withdrawn_after_round' => $withdrawn_after_round,
 				'family_name_first'     => $family_name_first,
-				'family_key'            => '' !== $family_key ? $family_key : null,
 			);
-			$formats = array( '%s', '%s', '%s', '%s', '%d', '%d', '%s' );
+			$formats = array( '%s', '%s', '%s', '%s', '%d', '%d' );
 
 			if ( $is_existing ) {
 				$player_id = (int) $key;

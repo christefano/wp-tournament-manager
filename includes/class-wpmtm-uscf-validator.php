@@ -18,13 +18,6 @@ if ( ! defined( 'ABSPATH' ) ) {
  */
 class WPMTM_USCF_Validator {
 
-	// D_NAME is hard-truncated at export time (see
-	// WPMTM_USCF_Export::NAME_MAX_LEN / build_detail_bytes()) rather than
-	// rejected, so an over-long player name is a warning here, not an
-	// error - everything else in check_field_widths() below throws in
-	// WPMTM_DBF_Writer::validate_value() instead of truncating.
-	const D_NAME_MAX_LEN = 30;
-
 	protected $data;
 	protected $rated;
 
@@ -58,7 +51,6 @@ class WPMTM_USCF_Validator {
 		$this->check_duplicate_members_and_names( $findings );
 		$this->check_lst_pair( $findings );
 		$this->check_ascii_and_name_format( $findings );
-		$this->check_field_widths( $findings );
 		$this->check_section_numbers( $findings );
 		$this->check_dates( $findings );
 
@@ -624,101 +616,6 @@ class WPMTM_USCF_Validator {
 						'warning',
 						'name_format',
 						"Section {$sec_num} player {$pair_num}: name '{$p['name']}' does not match the expected 'LAST,FIRST' format.",
-						$sec_num,
-						$pair_num,
-						null
-					);
-				}
-			}
-		}
-	}
-
-	// ---- check 9a: DBF field-width limits ----
-
-	/**
-	 * WPMTM_DBF_Writer::validate_value() throws InvalidArgumentException
-	 * for any Character-field value longer than its declared width - see
-	 * that class's docblock ("ASCII-refuse rather than corrupt"). Every
-	 * width below is copied from the writer's own field definitions
-	 * (WPMTM_USCF_Export::header_fields()/section_fields()/
-	 * detail_fixed_fields()) so this check never drifts from what would
-	 * actually crash the export; docs/SPEC.md's DBF schema tables carry
-	 * the same numbers.
-	 *
-	 * Only fields with a real user-reachable path to an over-length value
-	 * are checked here - affiliate_id/chief_td_id/assistant_td_id are
-	 * skipped because check_affiliate_id()/check_td_ids() already require
-	 * an exact-length format (e.g. 8 digits) that is strictly narrower
-	 * than the DBF width, so a width violation there is already caught
-	 * (and reported more specifically) by those checks. D_NAME is
-	 * deliberately excluded - it is hard-truncated, not rejected, by the
-	 * writer path, so it gets its own warning-level check below instead.
-	 */
-	protected function check_field_widths( array &$findings ) {
-		$d = $this->data;
-
-		$header_widths = array(
-			'event_name' => array( 35, 'H_NAME', 'tournament name' ),
-			'city'       => array( 21, 'H_CITY', 'city' ),
-			'zipcode'    => array( 10, 'H_ZIPCODE', 'zip code' ),
-		);
-
-		foreach ( $header_widths as $field => $spec ) {
-			list( $max, $dbf_field, $label ) = $spec;
-			if ( ! isset( $d[ $field ] ) ) {
-				continue;
-			}
-			$value = (string) $d[ $field ];
-			$len   = strlen( $value );
-			if ( $len > $max ) {
-				$findings[] = $this->finding(
-					'error',
-					'field_too_long',
-					"Event: {$label} '{$value}' is {$len} characters, but the USCF export format allows at most {$max} (field {$dbf_field}).",
-					null,
-					null,
-					null
-				);
-			}
-		}
-
-		$section_widths = array(
-			'sec_name' => array( 30, 'S_SEC_NAME', 'section name' ),
-			'timectl'  => array( 40, 'S_TIMECTL', 'time control' ),
-		);
-
-		foreach ( $this->sections() as $s ) {
-			$sec_num = isset( $s['sec_num'] ) ? $s['sec_num'] : null;
-
-			foreach ( $section_widths as $field => $spec ) {
-				list( $max, $dbf_field, $label ) = $spec;
-				if ( ! isset( $s[ $field ] ) ) {
-					continue;
-				}
-				$value = (string) $s[ $field ];
-				$len   = strlen( $value );
-				if ( $len > $max ) {
-					$findings[] = $this->finding(
-						'error',
-						'field_too_long',
-						"Section {$sec_num}: {$label} '{$value}' is {$len} characters, but the USCF export format allows at most {$max} (field {$dbf_field}).",
-						$sec_num,
-						null,
-						null
-					);
-				}
-			}
-
-			foreach ( $this->players( $s ) as $p ) {
-				$pair_num = isset( $p['pair_num'] ) ? $p['pair_num'] : null;
-				$name     = isset( $p['name'] ) ? (string) $p['name'] : '';
-				$len      = strlen( $name );
-				if ( $len > self::D_NAME_MAX_LEN ) {
-					$truncated  = substr( $name, 0, self::D_NAME_MAX_LEN );
-					$findings[] = $this->finding(
-						'warning',
-						'name_truncated',
-						"Section {$sec_num} player {$pair_num}: name '{$name}' is {$len} characters, but the USCF export format hard-truncates D_NAME at 30, so only '{$truncated}' will be submitted.",
 						$sec_num,
 						$pair_num,
 						null

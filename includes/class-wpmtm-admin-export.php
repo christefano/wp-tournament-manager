@@ -183,8 +183,6 @@ class WPMTM_Admin_Export {
 			'duplicate_player_name'       => __( 'Two players share a name; confirm they are different people or correct the duplicate.', 'wp-tournament-manager' ),
 			'name_format'                 => __( 'Store the name as LAST,FIRST.', 'wp-tournament-manager' ),
 			'non_ascii_field'             => __( 'Replace accented or non-English characters with plain ASCII; US Chess accepts ASCII only.', 'wp-tournament-manager' ),
-			'field_too_long'              => __( 'Shorten this value so it fits within the USCF export format\'s field width limit.', 'wp-tournament-manager' ),
-			'name_truncated'              => __( 'Shorten this player\'s name if the truncated 30-character version is not what you want submitted to US Chess.', 'wp-tournament-manager' ),
 			'pair_num_duplicate'          => __( 'Two players share a pairing number in this section; re-import or renumber.', 'wp-tournament-manager' ),
 			'pair_num_noncontiguous'      => __( 'Pairing numbers must run 1 to N with no gaps; re-import the section.', 'wp-tournament-manager' ),
 			'rating_system_mismatch'      => __( 'The time control does not match the section rating system; check the time control or the rating system.', 'wp-tournament-manager' ),

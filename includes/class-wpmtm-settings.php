@@ -113,18 +113,6 @@ class WPMTM_Settings {
 			'wpmtm_main'
 		);
 		add_settings_field(
-			// Not a stored option: renders the "Validate TDs" button
-			// (docs/SPEC.md, 2026-07-14, USCF status validation) directly
-			// under the three ID fields above, so the on-demand USCF check
-			// sits next to the values it checks. sanitize_options() never
-			// sees it (type="button", no name attribute, nothing posted).
-			'validate_tds',
-			__( 'USCF status', 'wp-tournament-manager' ),
-			array( $this, 'field_validate_tds' ),
-			self::PAGE_SLUG,
-			'wpmtm_main'
-		);
-		add_settings_field(
 			'default_city',
 			__( 'Default city', 'wp-tournament-manager' ),
 			array( $this, 'field_default_city' ),
@@ -213,32 +201,14 @@ class WPMTM_Settings {
 		echo '<p class="description">' . esc_html__( '8-digit USCF member ID, or leave blank.', 'wp-tournament-manager' ) . '</p>';
 	}
 
-	/**
-	 * The "Validate TDs" button (docs/SPEC.md, 2026-07-14, USCF status
-	 * validation): checks the saved affiliate ID, Chief TD, and Assistant
-	 * TD (when set) against the USCF ratings API via admin-ajax
-	 * (WPMTM_USCF_Status::ajax_validate_tds(), settings context,
-	 * through-date today); assets/wpmtm-admin.js renders the result rows
-	 * into the container below the button.
-	 */
-	public function field_validate_tds() {
-		printf(
-			'<button type="button" class="button" data-wpmtm-validate-tds data-context="settings" data-nonce="%1$s">%2$s</button>',
-			esc_attr( wp_create_nonce( 'wpmtm_validate_tds' ) ),
-			esc_html__( 'Validate TDs', 'wp-tournament-manager' )
-		);
-		echo '<p class="description">' . esc_html__( 'Checks the saved affiliate ID, Chief TD, and Assistant TD (when set) against the USCF ratings API: membership, TD certification, and Safe Play, as active through today. Advisory only - nothing is blocked by the result. Save your changes first if you edited the IDs above.', 'wp-tournament-manager' ) . '</p>';
-		echo '<div data-wpmtm-validate-tds-results></div>';
-	}
-
 	public function field_default_city() {
 		$opts = $this->opts();
 		printf(
-			'<input type="text" class="regular-text" maxlength="21" name="%1$s[default_city]" value="%2$s">',
+			'<input type="text" class="regular-text" name="%1$s[default_city]" value="%2$s">',
 			esc_attr( WPMTM_Plugin::OPTION_KEY ),
 			esc_attr( $opts['default_city'] )
 		);
-		echo '<p class="description">' . esc_html__( 'Used as the placeholder default when adding a new tournament; capped at 21 characters, the USCF export format\'s limit for the event city (H_CITY).', 'wp-tournament-manager' ) . '</p>';
+		echo '<p class="description">' . esc_html__( 'Used as the placeholder default when adding a new tournament.', 'wp-tournament-manager' ) . '</p>';
 	}
 
 	public function field_default_state() {

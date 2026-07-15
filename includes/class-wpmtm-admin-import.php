@@ -381,14 +381,13 @@ class WPMTM_Admin_Import {
 	 * Reads an event's registrations straight from wp-etr and shapes them
 	 * into the same row format (last, first, USCF id, rating, section,
 	 * status) its own "Pairing export" CSV uses, plus a 7th cell -
-	 * photo_id - and an 8th - family_key - the CSV never carries, so
+	 * photo_id - the CSV never carries, so
 	 * WPMTM_ETR_Import::normalize_rows() sees identical input for the
 	 * first 6 cells regardless of whether it arrived via a CSV upload or
-	 * this button, with photo_id and family_key only ever populated on
-	 * this door.
+	 * this button, with photo_id only ever populated on this door.
 	 *
 	 * @param int $event_id Already-validated event post id.
-	 * @return array List of 8-element raw rows.
+	 * @return array List of 7-element raw rows.
 	 */
 	protected function build_rows_from_event( $event_id ) {
 		$rows = array();
@@ -411,16 +410,6 @@ class WPMTM_Admin_Import {
 					// has no photo on file (see normalize_rows()'s
 					// docblock for how this cell is consumed).
 					isset( $r['photo_id'] ) ? $r['photo_id'] : 0,
-					// family_key (docs/SPEC.md, 2026-07-14): normalized
-					// (trim, lowercase, sanitize_email) parent email from
-					// wp-etr's own 'parent_email' row key (its
-					// attendee_parent_email(), mirroring how it reads
-					// photo_id); sanitize_email() is a WordPress function,
-					// so it runs here in the WP layer rather than inside
-					// normalize_rows() (pure/no-WP, per that method's own
-					// docblock) - '' normalizes the same way an absent 8th
-					// cell does there.
-					isset( $r['parent_email'] ) ? sanitize_email( strtolower( trim( (string) $r['parent_email'] ) ) ) : '',
 				);
 			}
 		}

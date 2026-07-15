@@ -29,7 +29,7 @@ Tournament Manager pulls in a club's existing online registration from ET (enhan
 
 - Bring a roster in from ETR's "Pairing export" CSV, uploaded by hand, or (with ETR 5.2.3+) pulled straight over with one click with the "Import to Tournament Manager" button on the event's "Registrations" tab.
 - Players marked "No-show" (in advance of the import) on their player card in ETR are skipped.
-- A USCF ID with anything non-numeric (like a parent requesting a new USCF ID for a youth player) is imported with a blank member ID and alerts the TD to fill it in once USCF issues their new membership.
+- A USCF ID with anything non-numeric (like a parent requesting a new USCF ID for a youth player) is imported with a blank member ID and a alerts the TD to fill it in once USCF issues their new membership.
 - Exact-duplicate rows import just once with a warning instead of doubling a player up. The preview page shows every detected section with create-new / map-to-existing / skip choices and a rated toggle before anything is saved, and the importer warns before a re-import would append onto a section that already has players.
 - Sections can be marked rated or unrated individually, and an oversized section can be auto-split into 4-player round robin quads at import time.
 
@@ -47,19 +47,13 @@ Tournament Manager pulls in a club's existing online registration from ET (enhan
 **Standings**
 
 - Support for all four US Chess rulebook 34E tiebreaks, in order: Modified Median, Solkoff, Cumulative, and Cumulative of Opposition, falling back to rating then name.
-- Shown on the linked event page automatically and available anywhere via the `[wpmtm_standings]` shortcode (add `tournament="123"` to point at a specific tournament, or leave it off on the event page itself).
+- Shown on the linked event page automatically and available anywhere via the `[wpmtm_standings]` shortcode (add `tournament="123"` to point at a specific tournament (or leave it off on the event page itself).
 - Note that the event page's "Standings" tab is the official live view and that a shortcode placed elsewhere can lag behind it until that page's own cache entry expires.
 
 **USCF export**
 
 - A clean report exports as a single zip containing `THEXPORT.DBF`, `TSEXPORT.DBF`, and `TDEXPORT.DBF` files, ready to upload in the TD / Affiliate area at [ratings.uschess.org](https://ratings.uschess.org). This is a manual upload in order to keep Tournament Manager lean and mean for v1.0, but submitting directly to USCF may be added in the future if I get access to the USCF MUIR API.
 - A readiness report runs a pre-export validator against the tournament's rated sections and explains errors and warnings. Errors block the download and warnings don't.
-
-**USCF status validation**
-
-- On-demand checks against the USCF ratings API, so a bad membership surfaces before the upload bounces: a "Validate players" button on the event's "Registrations" tab (with ETR 5.2.5+) checks every registered player's USCF membership through the event's end date, and "Validate TDs" buttons in Settings and on the tournament edit page check the club affiliate ID plus each TD's membership, TD certification, and Safe Play certification.
-- Results show PASS or FAIL per person with the reason spelled out ("Expired 2025-01-31", "Not a certified TD", "No Safe Play certification on file"), plus a "renew soon" heads-up when something passes but expires within 30 days of the tournament's last day.
-- Advisory only: nothing in Tournament Manager is ever blocked by a validation result.
 
 **Settings**
 
@@ -129,9 +123,9 @@ First, an event for the tournament needs to be created (using The Events Calenda
 - Click "Import to Tournament Manager" right on the event's "Registrations" tab, or upload ETR's "Pairing export" CSV in the tournament's edit page. Review the preview (sections, rated flags, no-shows skipped, any blank USCF IDs) and confirm.
 - A "Family name first" option is available to reverse the display of First and Last names for individual registrants.
 4. **Enter rounds**
-- On the event's page, use the pairing aid under the "Round entry" tab to pair each round either by hand or with the "Suggest pairings" button, then enter results (or byes or a withdrawal) and save. Standings are updated immediately for anyone viewing the page. The "Suggest pairings" button pairs all the players and populates the pairing aid for you to review, modify, and save. Pairings are determined by closeness in rating, a player is never paired against the same player twice, and family members (players sharing a family key or a last name) are not paired against each other when an alternative exists.
+- On the event's page, use the pairing aid under the "Round entry" tab to pair each round either by hand or with the "Suggest pairings" link, then enter results (or byes or a withdrawal) and save. Standings are updated immediately for anyone viewing the page. The "Suggest pairings" link pairs all the players and populates the pairing aid for you to review, modify, and save. Pairings are determined by closeness in rating, and a player is never paired against the same player twice.
 5. **Check standings**
-- The event page shows live standings with tiebreaks under the "Standings" tab.
+- The event page shows live standings with tiebreaks under the event page's "Standings" tab.
 6. **Export**
 - For rated tournaments, the tournament's edit page runs a readiness report. Review errors and warnings (e.g. a registrant's USCF ID is missing due to them registering before getting one). Errors block the download and warnings don't.
 - Once it's error-free, download the DBF zip. Upload the zip file's three DBF files at the USCF TD / Affiliate area at [ratings.uschess.org](https://ratings.uschess.org).
@@ -146,15 +140,15 @@ The moment that event registrations are imported into Tournament Manager, no new
 
 Registrations are viewable / editable by the person who paid during registration (perfect for parents), and this is managed by ETECF outside of Tournament Manager. Note that registration data edited *after* event registrations have been imported by CSV or the "Import into Tournament Manager" button *do* get saved but those changes are reflected in ETR and not in Tournament Manager post-import.
 
-**The "Import to Tournament Manager" button is missing**
-
-The "Import to Tournament Manager" button on ETR's "Registrations" tab needs ETR 5.2.3 or later. Older ETR versions will still work with Tournament Manager but only through the manual CSV upload.
-
 **The USCF export worked, but importing to USCF doesn't**
 
 Check that all players in rated sections have active USCF memberships and that your **club's affiliate ID**, your **TD's USCF membership**, and your **TD's Safe Play certifications** are active and up to date. If any of these are incorrect or expired, the USCF import won't work. According to USCF guidelines, a player's USCF membership must be active *up to and including* the date of the last day of your tournament.
 
-This can be a show-stopper, so check everything *before* importing registrants into Tournament Manager. Tournament Manager now does these checks for you, on demand, against the USCF ratings API: a "Validate players" button on the event's "Registrations" tab (with ETR 5.2.5+) checks every registered player's membership through the event's end date, and "Validate TDs" buttons in Tournament Manager Settings and on the tournament edit page check the club affiliate ID, TD USCF memberships, TD certifications, and Safe Play certifications. These checks are advisory only and nothing is blocked by their results, so a no-go verdict can be handled your usual way (renew, or mark the player as a no-show in ETR). One caveat: the USCF MUIR API v1 these checks use is unsupported by USCF, and v2 is supposedly coming in late Summer, 2026. What a fun time for tournament software developers!
+This can be a show-stopper, so manually check your club and TD status and verify your registrants' USCF memberships on the event's "Registrations" tab *before* importing them into Tournament Manager. I might add checks in the future to validate the club affiliate ID, player and TD USCF membership status, and current Safe Play certifications, but the USCF MUIR API v1 is unsupported and v2 is supposedly coming in late Summer, 2026. What a fun time for tournament software developers!
+
+**The "Import to Tournament Manager" is missing**
+
+The "Import to Tournament Manager" button on ETR's "Registrations" tab needs ETR 5.2.3 or later. Older ETR versions will still work with Tournament Manager but only through the manual CSV upload.
 
 **I don't know what is happening, what just happened, or what to do next**
 
@@ -165,7 +159,7 @@ There's also an optional setup guide that will walk you through setting up and m
 ## Data
 
 Tournament Manager creates five tables (prefixed with your WordPress table prefix): `wpmtm_tournaments`, `wpmtm_sections`, `wpmtm_players`,
-`wpmtm_games`, and `wpmtm_byes`. It also saves the `wpmtm_options` option (affiliate ID, TD IDs, defaults, time control presets, and delete-on-uninstall flag) and the `wpmtm_db_version` option used to run schema upgrades.
+`wpmtm_games`, and `wpmtm_byes`. It also saves the `wpmtm_options` option (affiliate ID, TD IDs, defaults, time control presets, delete-on-uninstall flag) and the `wpmtm_db_version` option used to run schema upgrades.
 
 The first `m` in `wpmtm` is a nod to the McMinnville Chess Club for which Tournament Manager was originally created.
 
