@@ -125,7 +125,7 @@ First, an event for the tournament needs to be created (using The Events Calenda
 4. **Enter rounds**
 - On the event's page, use the pairing aid under the "Round entry" tab to pair each round either by hand or with the "Suggest pairings" link, then enter results (or byes or a withdrawal) and save. Standings are updated immediately for anyone viewing the page. The "Suggest pairings" link pairs all the players and populates the pairing aid for you to review, modify, and save. Pairings are determined by closeness in rating, and a player is never paired against the same player twice.
 5. **Check standings**
-- The event page shows live standings with tiebreaks under the "Sandings" tab.
+- The event page shows live standings with tiebreaks under the event page's "Standings" tab.
 6. **Export**
 - For rated tournaments, the tournament's edit page runs a readiness report. Review errors and warnings (e.g. a registrant's USCF ID is missing due to them registering before getting one). Errors block the download and warnings don't.
 - Once it's error-free, download the DBF zip. Upload the zip file's three DBF files at the USCF TD / Affiliate area at [ratings.uschess.org](https://ratings.uschess.org).
