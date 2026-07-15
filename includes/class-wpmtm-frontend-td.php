@@ -84,7 +84,15 @@ class WPMTM_Frontend_TD {
 		$selected_round      = $this->determine_selected_round( $tot_rnds, $rounds_with_results );
 
 		if ( isset( $_GET[ $round_param ] ) ) { // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- read-only round selector, not a state change; the save form below is the state-changing action and is separately nonced.
-			$selected_round = max( 1, absint( wp_unslash( $_GET[ $round_param ] ) ) );
+			// Clamped to the same ceiling determine_selected_round() itself
+			// never exceeds (WPMTM_Round_Selector::max_reachable_round()), so
+			// a hand-edited URL cannot open an entry form for a round past
+			// the real maximum (docs/SPEC.md, 2026-07-14).
+			$selected_round = WPMTM_Round_Selector::clamp_round_override(
+				absint( wp_unslash( $_GET[ $round_param ] ) ),
+				$tot_rnds,
+				$rounds_with_results
+			);
 		}
 
 		list( $players, $games, $byes ) = WPMTM_Frontend_Public::instance()->section_data_arrays( $section );
@@ -163,6 +171,19 @@ class WPMTM_Frontend_TD {
 	 * the older '#etr-tab-{id}' form still opens the tab if it reaches an
 	 * older wp-etr, but this plugin only needs to target current wp-etr.)
 	 */
+	/**
+	 * Self-disabling button (docs/SPEC.md, 2026-07-14): still a plain
+	 * anchor with the same href/GET navigation as before (no-JS fallback
+	 * keeps working), styled as a button with the existing .wpmtm-btn look
+	 * plus its own .wpmtm-suggest-btn hook. assets/wpmtm-frontend.js binds
+	 * a click handler that disables it, sets aria-disabled, and swaps its
+	 * label to the localized "Generating suggestions..." string (carried
+	 * here as data-busy-label - the same data-attribute pattern
+	 * render_round_entry_form() already uses for its Save round button's
+	 * data-wpmtm-busy-label) before letting the click/navigation proceed.
+	 * The suggestion itself is built server-side on the next page load, so
+	 * that busy state simply persists until the reload lands.
+	 */
 	protected function render_suggest_link( $section, $eligible ) {
 		if ( ! $eligible ) {
 			return;
@@ -170,7 +191,11 @@ class WPMTM_Frontend_TD {
 		$suggest_param = 'wpmtm_suggest_' . $section->id;
 		?>
 		<p class="wpmtm-suggest-pairings">
-			<a href="<?php echo esc_url( add_query_arg( $suggest_param, 1 ) . '#tab-round-entry' ); ?>"><?php esc_html_e( 'Suggest pairings', 'wp-tournament-manager' ); ?></a>
+			<a
+				href="<?php echo esc_url( add_query_arg( $suggest_param, 1 ) . '#tab-round-entry' ); ?>"
+				class="wpmtm-btn wpmtm-suggest-btn"
+				data-busy-label="<?php echo esc_attr__( 'Generating suggestions...', 'wp-tournament-manager' ); ?>"
+			><?php esc_html_e( 'Suggest pairings', 'wp-tournament-manager' ); ?></a>
 		</p>
 		<?php
 	}
@@ -220,14 +245,17 @@ class WPMTM_Frontend_TD {
 		<?php
 	}
 
-	/** Default selected round: lowest round (1..tot_rnds) with no results yet, else one past the last entered round, else 1. */
+	/**
+	 * Default selected round: lowest round (1..tot_rnds) with no results
+	 * yet, else the final real round (never one past it - see
+	 * WPMTM_Round_Selector's own docblock for the phantom-round bug this
+	 * used to have and docs/SPEC.md, 2026-07-14). Delegates to the pure
+	 * WPMTM_Round_Selector class so this arithmetic is unit-tested directly
+	 * by tests/run-tests.php without needing this WP-coupled class's
+	 * constructor/repository dependencies.
+	 */
 	protected function determine_selected_round( $tot_rnds, array $rounds_with_results ) {
-		for ( $r = 1; $r <= $tot_rnds; $r++ ) {
-			if ( ! in_array( $r, $rounds_with_results, true ) ) {
-				return $r;
-			}
-		}
-		return $rounds_with_results ? ( max( $rounds_with_results ) + 1 ) : 1;
+		return WPMTM_Round_Selector::determine_selected_round( $tot_rnds, $rounds_with_results );
 	}
 
 	/**
@@ -237,8 +265,7 @@ class WPMTM_Frontend_TD {
 	 * render_suggest_link()'s docblock above for the full rationale.
 	 */
 	protected function render_round_selector( $tot_rnds, array $rounds_with_results, $selected_round, $round_param ) {
-		$max_known = max( array_merge( array( $tot_rnds, $selected_round ), $rounds_with_results ) );
-		$display_rounds = range( 1, $max_known );
+		$display_rounds = WPMTM_Round_Selector::display_rounds( $tot_rnds, $rounds_with_results, $selected_round );
 		?>
 		<p class="wpmtm-round-selector">
 			<?php esc_html_e( 'Round:', 'wp-tournament-manager' ); ?>

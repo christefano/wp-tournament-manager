@@ -1,4 +1,7 @@
 <?php
+if ( ! defined( 'ABSPATH' ) ) {
+	exit;
+}
 /**
  * Pure formatter for a player name stored "LAST,FIRST" (FIRST may carry
  * middle names, e.g. "CAPABLANCA,JOSE RAUL") into a naturally cased

@@ -43,6 +43,7 @@ require_once WPMTM_PLUGIN_DIR . 'includes/class-wpmtm-tiebreaks.php';
 require_once WPMTM_PLUGIN_DIR . 'includes/class-wpmtm-pairing-aid.php';
 require_once WPMTM_PLUGIN_DIR . 'includes/class-wpmtm-pairing-suggest.php';
 require_once WPMTM_PLUGIN_DIR . 'includes/class-wpmtm-round-entry.php';
+require_once WPMTM_PLUGIN_DIR . 'includes/class-wpmtm-round-selector.php';
 require_once WPMTM_PLUGIN_DIR . 'includes/class-wpmtm-export-builder.php';
 require_once WPMTM_PLUGIN_DIR . 'includes/class-wpmtm-name.php';
 
@@ -55,6 +56,10 @@ require_once WPMTM_PLUGIN_DIR . 'includes/class-wpmtm-plugin.php';
 require_once WPMTM_PLUGIN_DIR . 'includes/trait-wpmtm-admin-shared.php';
 require_once WPMTM_PLUGIN_DIR . 'includes/class-wpmtm-settings.php';
 require_once WPMTM_PLUGIN_DIR . 'includes/class-wpmtm-etr-import.php';
+// Mixed class like WPMTM_ETR_Import: pure/static USCF status verdict logic
+// (unit-tested by tests/run-tests.php) plus a WordPress-layer HTTP client
+// and admin-ajax handlers.
+require_once WPMTM_PLUGIN_DIR . 'includes/class-wpmtm-uscf-status.php';
 require_once WPMTM_PLUGIN_DIR . 'includes/class-wpmtm-admin.php';
 require_once WPMTM_PLUGIN_DIR . 'includes/class-wpmtm-admin-import.php';
 require_once WPMTM_PLUGIN_DIR . 'includes/class-wpmtm-admin-export.php';
@@ -85,5 +90,6 @@ add_action( 'plugins_loaded', function () {
 	WPMTM_Admin_Import::instance();
 	WPMTM_Admin_Export::instance();
 	WPMTM_Wizard::instance();
+	WPMTM_USCF_Status::instance();
 	WPMTM_Frontend::instance();
 } );

@@ -82,6 +82,64 @@ class WPMTM_Pairing_Suggest {
 	}
 
 	// -----------------------------------------------------------------
+	// Family avoidance (docs/SPEC.md, 2026-07-14).
+	// -----------------------------------------------------------------
+
+	/**
+	 * Whether two players count as the same family for pairing-avoidance
+	 * purposes: best effort, not a guarantee. Two independent signals, either
+	 * one is enough:
+	 *
+	 * 1. Shared family key - both players' normalized family_key (parent
+	 *    email from ETECF import, or a TD override typed into the roster
+	 *    editor - see WPMTM_Admin's players editor) are non-empty and equal.
+	 * 2. Same last name - the stored name is always uppercase LAST,FIRST
+	 *    (docs/SPEC.md; never mutated), so the last name is the substring
+	 *    before the first comma, trimmed, compared case-insensitively.
+	 *
+	 * The last-name signal cannot be suppressed per pair - two unrelated
+	 * players who happen to share a surname are still treated as family
+	 * unless a TD gives them distinct family keys, which does not help here
+	 * (this rule only ever fires on a name match already); a TD who needs
+	 * to force such a pairing anyway just pairs it by hand, since Suggest
+	 * pairings only ever prefills the round-entry form (WPMTM_Frontend_TD::
+	 * render_suggest_link()'s docblock).
+	 *
+	 * @param array $a Player row with a 'name' and optional 'family_key'.
+	 * @param array $b Same shape.
+	 * @return bool
+	 */
+	public static function same_family( array $a, array $b ) {
+		$key_a = self::normalize_family_key( isset( $a['family_key'] ) ? $a['family_key'] : '' );
+		$key_b = self::normalize_family_key( isset( $b['family_key'] ) ? $b['family_key'] : '' );
+		if ( '' !== $key_a && '' !== $key_b && $key_a === $key_b ) {
+			return true;
+		}
+
+		$last_a = self::last_name( isset( $a['name'] ) ? $a['name'] : '' );
+		$last_b = self::last_name( isset( $b['name'] ) ? $b['name'] : '' );
+		return '' !== $last_a && '' !== $last_b && $last_a === $last_b;
+	}
+
+	/** Trim + lowercase a family key for comparison; '' for empty/missing. */
+	protected static function normalize_family_key( $key ) {
+		return strtolower( trim( (string) $key ) );
+	}
+
+	/**
+	 * Last name from a stored "LAST,FIRST" name: the substring before the
+	 * first comma, trimmed, lowercased for comparison. A name with no comma
+	 * at all (should not happen - names are always stored LAST,FIRST) is
+	 * treated as entirely a last name rather than throwing.
+	 */
+	protected static function last_name( $name ) {
+		$name  = (string) $name;
+		$comma = strpos( $name, ',' );
+		$last  = false !== $comma ? substr( $name, 0, $comma ) : $name;
+		return strtolower( trim( $last ) );
+	}
+
+	// -----------------------------------------------------------------
 	// U-class section awareness (Change 5).
 	// -----------------------------------------------------------------
 
@@ -250,11 +308,15 @@ class WPMTM_Pairing_Suggest {
 
 			foreach ( $top as $i => $white_candidate ) {
 				// Preferred opponent: same index in the bottom half; walk
-				// forward (then backward) to dodge rematches.
-				$opp_index = self::pick_opponent( $white_candidate, $bottom, $i, $tally );
+				// forward (then backward) to dodge rematches, then family
+				// (docs/SPEC.md, 2026-07-14: never-rematch stays stronger
+				// than family avoidance - see pick_opponent()'s docblock).
+				$opp_index      = self::pick_opponent( $white_candidate, $bottom, $i, $tally );
+				$forced_rematch = false;
 				if ( null === $opp_index ) {
-					$opp_index = $i; // all rematches: accept and note.
-					$notes[]   = sprintf(
+					$opp_index      = $i; // all rematches: accept and note.
+					$forced_rematch = true;
+					$notes[]        = sprintf(
 						'%d. %s has already played every available opponent in the score group; a rematch is suggested.',
 						$white_candidate['pair_num'],
 						$white_candidate['name']
@@ -262,6 +324,21 @@ class WPMTM_Pairing_Suggest {
 				}
 				$opponent = $bottom[ $opp_index ];
 				array_splice( $bottom, $opp_index, 1 );
+
+				// A forced rematch already got its own note above and is a
+				// stronger, mutually exclusive condition (a rematch pairing
+				// is never also flagged as a family pairing here, even if
+				// the two happen to also be family - the rematch note
+				// already told the TD to double-check this board).
+				if ( ! $forced_rematch && self::same_family( $white_candidate, $opponent ) ) {
+					$notes[] = sprintf(
+						'%d. %s has no available non-family opponent in this score group; a family pairing (%d. %s) is suggested.',
+						$white_candidate['pair_num'],
+						$white_candidate['name'],
+						$opponent['pair_num'],
+						$opponent['name']
+					);
+				}
 
 				$boards[] = self::assign_colors( $white_candidate, $opponent, $tally );
 			}
@@ -286,7 +363,21 @@ class WPMTM_Pairing_Suggest {
 		);
 	}
 
-	/** Nearest non-rematch opponent index in $bottom, preferring $preferred. Null when every candidate is a rematch. */
+	/**
+	 * Nearest opponent index in $bottom, preferring $preferred, then
+	 * walking forward then backward the same way rematch-avoidance always
+	 * has. Two passes over that same walk order (docs/SPEC.md, 2026-07-14 -
+	 * never-rematch stays stronger than family avoidance):
+	 *
+	 * 1. Never a rematch AND never family - the ideal candidate.
+	 * 2. Never a rematch (family allowed) - used only when pass 1 found
+	 *    nobody, i.e. every non-rematch candidate left happens to be family;
+	 *    the caller (suggest_swiss()) notes this as a forced family pairing.
+	 *
+	 * Null only when every candidate is a rematch (pass 2 also empty) - the
+	 * caller then falls back to its own forced-rematch handling, unchanged
+	 * from before family avoidance existed.
+	 */
 	protected static function pick_opponent( array $player, array $bottom, $preferred, array $tally ) {
 		$count = count( $bottom );
 		if ( 0 === $count ) {
@@ -304,11 +395,23 @@ class WPMTM_Pairing_Suggest {
 				$order[] = $preferred - $step;
 			}
 		}
+
+		foreach ( $order as $idx ) {
+			if ( in_array( (int) $bottom[ $idx ]['id'], $played, true ) ) {
+				continue;
+			}
+			if ( self::same_family( $player, $bottom[ $idx ] ) ) {
+				continue;
+			}
+			return $idx;
+		}
+
 		foreach ( $order as $idx ) {
 			if ( ! in_array( (int) $bottom[ $idx ]['id'], $played, true ) ) {
-				return $idx;
+				return $idx; // non-rematch, but family - accept; caller notes it.
 			}
 		}
+
 		return null;
 	}
 
@@ -382,6 +485,15 @@ class WPMTM_Pairing_Suggest {
 	 * whole section, then withdrawn/already-entered players drop out of
 	 * the emitted boards). Odd rosters get a ghost seat; whoever draws
 	 * the ghost is the bye suggestion.
+	 */
+	/**
+	 * Family avoidance (docs/SPEC.md, 2026-07-14) deliberately does NOT
+	 * apply here: round robin and quad sections use a fixed Berger/circle
+	 * schedule by pair number, not a per-round pairing decision, so there
+	 * is no opponent choice left to steer away from a family pairing - the
+	 * whole schedule is fixed at section creation. A family pairing that
+	 * the schedule itself produces is just how round robin works (everyone
+	 * eventually plays everyone).
 	 */
 	protected static function suggest_round_robin( array $players, array $active, $round ) {
 		$notes = array();

@@ -61,6 +61,17 @@
 	margin: 8px 0;
 }
 
+/* Self-disabling "Suggest pairings" button (docs/SPEC.md, 2026-07-14):
+   .wpmtm-suggest-btn starts out looking like any other .wpmtm-btn;
+   assets/wpmtm-frontend.js adds .wpmtm-btn-busy and aria-disabled="true"
+   on click, before letting navigation proceed to the same href. */
+.wpmtm-btn-busy,
+.wpmtm-suggest-btn[aria-disabled="true"] {
+	opacity: 0.6;
+	pointer-events: none;
+	cursor: default;
+}
+
 .wpmtm-suggest-notes {
 	margin: 8px 0;
 }
@@ -254,4 +265,30 @@
 		width: 32px;
 		height: 32px;
 	}
+}
+
+/* USCF status validation results (docs/SPEC.md, 2026-07-14): the table
+   assets/wpmtm-frontend.js renders below wp-etr's Registrations-tab
+   toolbar after a "Validate players" click. Cell borders/padding come
+   from the shared .wpmtm-table rule above; only the verdict colors and
+   spacing are added here. */
+.wpmtm-validate-results {
+	margin: 12px 0;
+}
+
+.wpmtm-validate-summary {
+	margin: 8px 0 4px;
+}
+
+.wpmtm-validate-row--fail .wpmtm-validate-verdict {
+	color: #b32d2e;
+	font-weight: 600;
+}
+
+.wpmtm-validate-row--pass .wpmtm-validate-verdict {
+	color: #1a7a2e;
+}
+
+.wpmtm-validate-row--unknown .wpmtm-validate-verdict {
+	color: #8a6d3b;
 }

@@ -117,12 +117,23 @@ class WPMTM_ETR_Import {
 	 *                        photo_id, an attachment id (int), or 0/absent
 	 *                        for no photo - is carried through into the
 	 *                        'photo_id' key of the returned row when
-	 *                        present. Only WPMTM_Admin_Import::
-	 *                        build_rows_from_event() (the wp-etr one-click
-	 *                        import path) ever supplies it; parse()'s CSV
-	 *                        rows are always 6 cells, since ETR's "Pairing
-	 *                        export" CSV has no photo column, so a CSV
-	 *                        import's photo_id is always null.
+	 *                        present. An optional 8th element - family_key
+	 *                        (docs/SPEC.md, 2026-07-14), an already-
+	 *                        normalized (trim, lowercase, sanitize_email)
+	 *                        parent-email string, or '' for none - is
+	 *                        carried through into the 'family_key' key the
+	 *                        same way, normalizing to null rather than ''.
+	 *                        Only WPMTM_Admin_Import::build_rows_from_event()
+	 *                        (the wp-etr one-click import path) ever supplies
+	 *                        either 7th/8th element; parse()'s CSV rows are
+	 *                        always 6 cells, since ETR's "Pairing export" CSV
+	 *                        has neither a photo nor a parent-email column,
+	 *                        so a CSV import's photo_id and family_key are
+	 *                        always null (the CSV format is deliberately left
+	 *                        unchanged for SwissSys/WinTD compatibility - the
+	 *                        last-name family-avoidance signal still applies
+	 *                        to a CSV-imported roster even with no family_key
+	 *                        at all).
 	 * @return array array( 'rows' => ..., 'sections' => ..., 'warnings' => ... )
 	 *               - same success shape parse() returns.
 	 */
@@ -137,7 +148,7 @@ class WPMTM_ETR_Import {
 				continue;
 			}
 
-			$fields = array_pad( array_values( $fields ), 7, '' );
+			$fields = array_pad( array_values( $fields ), 8, '' );
 
 			$last_name  = trim( (string) $fields[0] );
 			$first_name = trim( (string) $fields[1] );
@@ -152,6 +163,15 @@ class WPMTM_ETR_Import {
 			// this normalizes to null the same way an explicit 0 ("no
 			// photo", wp-etr's own sentinel) does.
 			$photo_id = is_numeric( $fields[6] ) && (int) $fields[6] > 0 ? (int) $fields[6] : null;
+
+			// Optional 8th element: family_key (docs/SPEC.md, 2026-07-14),
+			// already normalized by the WP layer before reaching this pure
+			// method (sanitize_email() is a WordPress function - see this
+			// method's own docblock) - an empty string (the CSV path's
+			// permanent state, and the common case even on the wp-etr
+			// one-click path when a registrant has no parent email on
+			// file) normalizes to null the same way photo_id 0 does above.
+			$family_key = '' !== trim( (string) $fields[7] ) ? trim( (string) $fields[7] ) : null;
 
 			if ( '' === $last_name && '' === $first_name ) {
 				continue; // fully blank data row.
@@ -223,6 +243,7 @@ class WPMTM_ETR_Import {
 				'skip'       => $skip,
 				'warnings'   => $row_warnings,
 				'photo_id'   => $photo_id,
+				'family_key' => $family_key,
 			);
 		}
 
@@ -601,7 +622,11 @@ class WPMTM_ETR_Import {
 	 * and incrementing by 1 per row. Returns the number of rows inserted.
 	 * $row['photo_id'] (int|null, see normalize_rows()'s docblock) is
 	 * written straight through to wpmtm_players.photo_id - null for a CSV
-	 * import or any wp-etr row with no photo on file.
+	 * import or any wp-etr row with no photo on file. $row['family_key']
+	 * (string|null, docs/SPEC.md 2026-07-14) is written the same way to
+	 * wpmtm_players.family_key - null for every CSV import (the CSV format
+	 * carries no parent-email column) and for any wp-etr row whose
+	 * registrant has no parent email on file.
 	 */
 	protected function insert_players( $section_id, array $ordered, $start_pair_num ) {
 		global $wpdb;
@@ -620,8 +645,9 @@ class WPMTM_ETR_Import {
 					'state'      => null,
 					'rating'     => '' !== $row['rating'] ? $row['rating'] : null,
 					'photo_id'   => ! empty( $row['photo_id'] ) ? (int) $row['photo_id'] : null,
+					'family_key' => ! empty( $row['family_key'] ) ? $row['family_key'] : null,
 				),
-				array( '%d', '%d', '%s', '%s', '%s', '%s', '%d' )
+				array( '%d', '%d', '%s', '%s', '%s', '%s', '%d', '%s' )
 			);
 			$pair_num++;
 			$inserted++;
