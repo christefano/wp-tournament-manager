@@ -79,10 +79,16 @@ class WPMTM_USCF_Export {
 		if ( isset( $this->data['update_date'] ) ) {
 			return $this->data['update_date'];
 		}
+		// Last-resort fallback only: this class is pure (no WordPress
+		// dependency, unit-tested by tests/run-tests.php) and must stay
+		// that way, so it cannot call current_time()/wp_date(). The
+		// WordPress layer (WPMTM_Admin_Export::build_report()) always
+		// passes an explicit update_date built from current_time() so
+		// the DBF carries the club's local date rather than UTC.
 		return array(
-			'year'  => (int) date( 'Y' ),
-			'month' => (int) date( 'n' ),
-			'day'   => (int) date( 'j' ),
+			'year'  => (int) date( 'Y' ), // phpcs:ignore WordPress.DateTime.RestrictedFunctions.date_date -- pure class, no WP dependency allowed; real callers always pass update_date explicitly (see above).
+			'month' => (int) date( 'n' ), // phpcs:ignore WordPress.DateTime.RestrictedFunctions.date_date -- pure class, no WP dependency allowed; real callers always pass update_date explicitly (see above).
+			'day'   => (int) date( 'j' ), // phpcs:ignore WordPress.DateTime.RestrictedFunctions.date_date -- pure class, no WP dependency allowed; real callers always pass update_date explicitly (see above).
 		);
 	}
 
@@ -306,7 +312,7 @@ class WPMTM_USCF_Export {
 		foreach ( $files as $name => $bytes ) {
 			$path = rtrim( $dir, '/' ) . '/' . $name . '.DBF';
 			if ( false === file_put_contents( $path, $bytes ) ) {
-				throw new RuntimeException( 'failed to write ' . $path );
+				throw new RuntimeException( 'failed to write ' . $path ); // phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- pure class, this exception is never echoed to a browser (write_files() is a filesystem helper, not a request handler).
 			}
 		}
 		return $files;

@@ -487,7 +487,7 @@ class WPMTM_USCF_Validator {
 					$findings[] = $this->finding(
 						'error',
 						'round_count_mismatch',
-						"Section {$sec_num}: player {$pair_num} has {$count} rounds recorded but the section is set for {$tot_rnds} rounds.",
+						"Section {$sec_num} player {$pair_num} ('{$p['name']}'): has {$count} rounds recorded but the section is set for {$tot_rnds} rounds.",
 						$sec_num,
 						$pair_num,
 						null
@@ -611,7 +611,7 @@ class WPMTM_USCF_Validator {
 						$findings[] = $this->finding(
 							'error',
 							'non_ascii_field',
-							"Section {$sec_num} player {$pair_num}: field '{$field}' contains a non-ASCII character and must be transliterated before export.",
+							"Section {$sec_num} player {$pair_num} ('{$p['name']}'): field '{$field}' contains a non-ASCII character and must be transliterated before export.",
 							$sec_num,
 							$pair_num,
 							null
@@ -658,7 +658,7 @@ class WPMTM_USCF_Validator {
 		$d = $this->data;
 
 		$header_widths = array(
-			'event_name' => array( 35, 'H_NAME', 'tournament name' ),
+			'event_name' => array( 35, 'H_NAME', 'Tournament name' ),
 			'city'       => array( 21, 'H_CITY', 'city' ),
 			'zipcode'    => array( 10, 'H_ZIPCODE', 'zip code' ),
 		);
@@ -970,7 +970,7 @@ class WPMTM_USCF_Validator {
 					$findings[] = $this->finding(
 						'warning',
 						'member_id_blank',
-						"Section {$sec_num} player {$pair_num}: USCF member ID is blank; the TD must confirm this player's membership before submitting. For a brand-new US Chess member, get the ID from the membership purchase (or the uschess.org member lookup) and enter it on the player row in the admin players editor, then re-run this report.",
+						"Section {$sec_num} player {$pair_num} ('{$p['name']}'): USCF member ID is blank. The TD must confirm this player's membership before submitting. For a brand-new USCF member, get the ID from the membership purchase (or the uschess.org member lookup) and enter it on the player row in the admin players editor, then re-run this report.",
 						$sec_num,
 						$pair_num,
 						null
@@ -981,7 +981,7 @@ class WPMTM_USCF_Validator {
 					$findings[] = $this->finding(
 						'warning',
 						'rating_blank',
-						"Section {$sec_num} player {$pair_num}: rating is blank and no member ID is recorded either.",
+						"Section {$sec_num} player {$pair_num} ('{$p['name']}'): rating is blank and no member ID is recorded either.",
 						$sec_num,
 						$pair_num,
 						null
@@ -989,6 +989,104 @@ class WPMTM_USCF_Validator {
 				}
 			}
 		}
+	}
+
+	// ---- export-readiness classification (docs/SPEC.md v1.2 section 3) ----
+
+	/**
+	 * Maps an already-computed player membership verdict (WPMTM_USCF_Status::
+	 * validate_member()'s return shape) to an export-readiness finding.
+	 * Pure: takes a verdict row, never touches the network itself, so the
+	 * error-vs-warning classification is unit-testable against fixture
+	 * verdicts. A player membership problem is a warning - it does not
+	 * block the download, unchanged from how a blank member ID is
+	 * already handled by check_blank_member_and_rating() above. An
+	 * UNKNOWN verdict - API unreachable, or (docs/SPEC.md, 2026-07-16) a
+	 * cache-only page render that has not checked this player yet -
+	 * produces no finding at all for a player - the same "never strand/
+	 * never block" rule the DBF TD gate applies, just without a notice;
+	 * use is on-demand ("Validate players") or the export itself (which
+	 * re-checks fresh) for a definitive answer.
+	 *
+	 * @param array    $verdict WPMTM_USCF_Status::validate_member()'s shape.
+	 * @param int|null $section Section number, for finding context.
+	 * @param mixed    $player  Pairing number, for finding context.
+	 * @param string   $name    Player's stored "LAST,FIRST" name, for finding
+	 *                           context. Optional so existing callers that
+	 *                           have not been updated still work.
+	 * @return array|null A finding, or null when nothing to report.
+	 */
+	public static function classify_export_player_verdict( array $verdict, $section = null, $player = null, $name = null ) {
+		if ( 'FAIL' !== $verdict['verdict'] ) {
+			return null;
+		}
+		$reason = isset( $verdict['reason'] ) && '' !== $verdict['reason'] ? $verdict['reason'] : 'membership problem';
+		return array(
+			'level'     => 'warning',
+			'code'      => 'player_membership_lapsed',
+			'message'   => "Section {$section} player {$player} ('{$name}'): USCF status check found a problem - {$reason}.",
+			'section'   => $section,
+			'player'    => $player,
+			'round'     => null,
+			'member_id' => isset( $verdict['member_id'] ) ? $verdict['member_id'] : '',
+		);
+	}
+
+	/**
+	 * Maps an already-computed TD verdict (WPMTM_USCF_Status::
+	 * validate_td()'s return shape) to an export-readiness finding.
+	 * Pure, same shape/testing rationale as classify_export_player_verdict()
+	 * above. Unlike the player check, a FAIL here is an `error` that
+	 * blocks the export (docs/SPEC.md: "USCF would reject a
+	 * submission from a lapsed or non-Safe-Play TD, so this is a hard
+	 * gate"), and an UNKNOWN verdict is a non-blocking `notice` rather
+	 * than silence, so an outage - or, on the readiness report at page-
+	 * render time, simply nothing cached yet - is visible but never
+	 * strands a valid TD (docs/SPEC.md, "Decisions (2026-07-16, USCF API
+	 * traffic reduction)": a cache-only render never blocks the download
+	 * or reads as a failure; it just says the check has not run yet).
+	 * The UNKNOWN branch reuses the same `notice` level either way and
+	 * only varies the message/code based on $verdict['not_checked']
+	 * (set by WPMTM_USCF_Status::not_checked_row()) so a TD is not told
+	 * "could not verify" when the truth is simply "not checked yet".
+	 *
+	 * @param array  $verdict WPMTM_USCF_Status::validate_td()'s shape.
+	 * @param string $role    Role label for the message, e.g. 'Chief TD'.
+	 * @return array|null A finding, or null on PASS.
+	 */
+	public static function classify_export_td_verdict( array $verdict, $role ) {
+		if ( 'FAIL' === $verdict['verdict'] ) {
+			$reason = isset( $verdict['reason'] ) && '' !== $verdict['reason'] ? $verdict['reason'] : 'membership or Safe Play problem';
+			return array(
+				'level'   => 'error',
+				'code'    => 'td_membership_lapsed',
+				'message' => "{$role}: {$reason}.",
+				'section' => null,
+				'player'  => null,
+				'round'   => null,
+			);
+		}
+		if ( 'UNKNOWN' === $verdict['verdict'] ) {
+			if ( ! empty( $verdict['not_checked'] ) ) {
+				return array(
+					'level'   => 'notice',
+					'code'    => 'td_status_not_checked',
+					'message' => "{$role}: not checked yet - will be checked fresh when you download the USCF export.",
+					'section' => null,
+					'player'  => null,
+					'round'   => null,
+				);
+			}
+			return array(
+				'level'   => 'notice',
+				'code'    => 'td_status_unknown',
+				'message' => "{$role}: could not verify USCF status right now - try again before submitting.",
+				'section' => null,
+				'player'  => null,
+				'round'   => null,
+			);
+		}
+		return null;
 	}
 
 	// ---- check 16 (rated only): r_system / trn_type validity ----

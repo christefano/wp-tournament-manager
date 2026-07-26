@@ -10,9 +10,71 @@ if ( ! defined( 'ABSPATH' ) ) {
  *
  * Results are stored per-game (one row per board) in wpmtm_games, not
  * per-player: the TD enters one result per board and both players' DBF
- * round-tokens are derived from it via RESULT_TOKEN_MAP, so reciprocity
- * errors are impossible by construction. WPMTM_USCF_Validator remains the
- * export-time backstop. Byes are per-player, stored in wpmtm_byes.
+ * round-tokens are derived from it via WPMTM_Scoring::RESULT_TOKEN_MAP,
+ * so reciprocity errors are impossible by construction.
+ * WPMTM_USCF_Validator remains the export-time backstop. Byes are
+ * per-player, stored in wpmtm_byes.
+ *
+ * wpmtm_sections.auto_rounds_hint (added 0.1.9, docs/SPEC.md, "Decisions
+ * (2026-07-16, auto-set Round Robin / Quad rounds)"): the tot_rnds value
+ * WPMTM_Admin last auto-suggested for a Round Robin / Quad section, or
+ * NULL when no auto-fill has happened (Swiss sections, or a TD-typed
+ * value with no auto-fill history). Distinct from tot_rnds itself so a
+ * later roster-size change can be told apart from a TD's deliberate
+ * override: WPMTM_Admin_Sections::handle_save_sections() only re-suggests when
+ * the posted tot_rnds is empty (0) or still equals this stored hint.
+ *
+ * wpmtm_players.rating_source / rating_checked (added 0.1.10, docs/SPEC.md,
+ * "Decisions (2026-07-17, rating provenance)"): mirrors the attendee-level
+ * _wpmtm_rating_source / _wpmtm_rating_checked meta WPMTM_Registration_Check
+ * writes whenever it overwrites a rating with the official USCF value, the
+ * same way photo_id and family_key already carry an ETECF attendee value
+ * through into this table. rating_source is 'official' or NULL ("not
+ * written by us" - the honest default); rating_checked is a
+ * current_time('timestamp')-style unix integer or NULL. Only ever set by
+ * the roster import (from the one-click "Import to Tournament Manager"
+ * door; a CSV import carries neither, same as photo_id/family_key); a
+ * hand-edited rating in the roster editor clears both, since a TD's typed
+ * value is no longer what USCF said.
+ *
+ * wpmtm_players.notes (added 0.1.11, docs/SPEC.md, "Decisions (2026-07-17,
+ * import the registrant note)"): carries ETECF's free-text
+ * etecf_additional_information attendee meta into the roster, the
+ * deliberately lightweight alternative to a structured byes-by-round
+ * field. Registrants sometimes type a bye request into this box; rather
+ * than build ETECF fields or byes-by-round machinery, the note is simply
+ * imported and shown to the TD in the roster editor and the Round-entry
+ * Byes area. Same carry-through pattern as photo_id/family_key: only the
+ * one-click/event import path and roster-editor edits populate it, a CSV
+ * import leaves it empty (the pairing-export CSV has no notes column).
+ *
+ * wpmtm_tournaments.affiliate_id (added 0.1.12, docs/SPEC.md, "Decisions
+ * (2026-07-18, per-tournament USCF affiliate ID)"): a per-tournament
+ * override of the club-wide affiliate ID stored in wpmtm_options, for a
+ * shared install running an event on behalf of a different club. Same
+ * "own value, Settings fallback" pattern the DBF export already applies to
+ * city/state/zipcode (WPMTM_Export_Builder::first_nonblank()) - unlike
+ * head_td_id/assistant_td_id, which deliberately have NO Settings fallback
+ * (docs/SPEC.md, "Decisions (2026-07-17, TD default removal)"), the
+ * affiliate ID keeps its fallback because a blank per-tournament affiliate
+ * is the normal case (most tournaments use the club's own affiliate) and
+ * not, unlike a blank TD field, a deliberate "this tournament genuinely has
+ * none" signal. Never autopopulated on the tournament form; a "Use
+ * default" button copies the Settings value in on click, the same as the
+ * TD ID fields.
+ *
+ * wpmtm_tournaments.created_by (added 0.1.13, rescoping the
+ * 'wpmtm_tournament_manager' role to a TD's own tournaments): the WP user
+ * id that created the tournament, set once at insert time
+ * (WPMTM_Admin::handle_save_tournament()) and never changed afterward.
+ * WPMTM_Roles::user_can_manage_tournament() is the sole reader: an
+ * administrator (manage_options) always passes regardless of this column;
+ * a dedicated-role TD passes only when it matches their own user id. NULL
+ * for every tournament that existed before this column was added - treated
+ * as "no recorded owner" and left manageable by any WPMTM_CAPABILITY user
+ * (grandfathered in, since there is no reliable owner to backfill from: a
+ * linked event's post_author is often the person who set up the whole
+ * site, not the TD who runs the tournament).
  */
 class WPMTM_Schema {
 
@@ -20,51 +82,13 @@ class WPMTM_Schema {
 	 * Bump whenever the CREATE TABLE statements below change; maybe_upgrade()
 	 * re-runs dbDelta when the stored option differs from this value.
 	 */
-	const DB_VERSION = '0.1.8';
+	const DB_VERSION = '0.1.13';
 
 	/** Allowed wpmtm_games.result values. */
 	const GAME_RESULTS = array( 'W', 'B', 'D', 'FW', 'FB', 'FD' );
 
 	/** Allowed wpmtm_byes.type values. */
 	const BYE_TYPES = array( 'B', 'H', 'U' );
-
-	/**
-	 * Maps a wpmtm_games.result value to the round-token components
-	 * (WPMTM_Round_Token::encode() args) each side gets:
-	 *
-	 * - W  = White won: White gets token result 'W', Black gets 'L'.
-	 * - B  = Black won: White gets 'L', Black gets 'W'.
-	 * - D  = Draw: both sides get 'D'.
-	 * - FW = White wins by forfeit: White gets 'X', Black gets 'F' (no color).
-	 * - FB = Black wins by forfeit: White gets 'F', Black gets 'X' (no color).
-	 * - FD = Double forfeit draw: both sides get 'Z' (no color).
-	 */
-	const RESULT_TOKEN_MAP = array(
-		'W'  => array(
-			'white' => array( 'result' => 'W', 'color' => 'W' ),
-			'black' => array( 'result' => 'L', 'color' => 'B' ),
-		),
-		'B'  => array(
-			'white' => array( 'result' => 'L', 'color' => 'W' ),
-			'black' => array( 'result' => 'W', 'color' => 'B' ),
-		),
-		'D'  => array(
-			'white' => array( 'result' => 'D', 'color' => 'W' ),
-			'black' => array( 'result' => 'D', 'color' => 'B' ),
-		),
-		'FW' => array(
-			'white' => array( 'result' => 'X', 'color' => null ),
-			'black' => array( 'result' => 'F', 'color' => null ),
-		),
-		'FB' => array(
-			'white' => array( 'result' => 'F', 'color' => null ),
-			'black' => array( 'result' => 'X', 'color' => null ),
-		),
-		'FD' => array(
-			'white' => array( 'result' => 'Z', 'color' => null ),
-			'black' => array( 'result' => 'Z', 'color' => null ),
-		),
-	);
 
 	/** Full table name for a short table key, e.g. 'tournaments' => '{prefix}wpmtm_tournaments'. */
 	public static function table( $key ) {
@@ -122,15 +146,18 @@ class WPMTM_Schema {
 			country varchar(191) DEFAULT NULL,
 			head_td_id varchar(8) DEFAULT NULL,
 			assistant_td_id varchar(8) DEFAULT NULL,
+			affiliate_id varchar(10) DEFAULT NULL,
 			send_crosstable tinyint(1) unsigned NOT NULL DEFAULT 0,
 			show_photos tinyint(1) unsigned NOT NULL DEFAULT 0,
 			locked tinyint(1) unsigned NOT NULL DEFAULT 0,
 			status varchar(20) NOT NULL DEFAULT 'setup',
+			created_by bigint(20) unsigned DEFAULT NULL,
 			created_at datetime DEFAULT NULL,
 			updated_at datetime DEFAULT NULL,
 			PRIMARY KEY  (id),
 			UNIQUE KEY event_post_id (event_post_id),
-			KEY status (status)
+			KEY status (status),
+			KEY created_by (created_by)
 		) {$charset_collate};";
 
 		$sql[] = "CREATE TABLE {$sections} (
@@ -142,6 +169,7 @@ class WPMTM_Schema {
 			timectl varchar(40) NOT NULL DEFAULT '',
 			trn_type char(1) NOT NULL DEFAULT 'S',
 			tot_rnds smallint(5) unsigned NOT NULL DEFAULT 0,
+			auto_rounds_hint smallint(5) unsigned DEFAULT NULL,
 			sch_lvl char(1) DEFAULT NULL,
 			gr_prix char(1) NOT NULL DEFAULT 'N',
 			gp_pts smallint(5) unsigned NOT NULL DEFAULT 0,
@@ -164,6 +192,9 @@ class WPMTM_Schema {
 			withdrawn_after_round smallint(5) unsigned DEFAULT NULL,
 			family_name_first tinyint(1) unsigned NOT NULL DEFAULT 0,
 			family_key varchar(191) NULL,
+			rating_source varchar(20) DEFAULT NULL,
+			rating_checked int(10) unsigned DEFAULT NULL,
+			notes text NULL,
 			PRIMARY KEY  (id),
 			UNIQUE KEY section_pair (section_id,pair_num),
 			KEY section_id (section_id)

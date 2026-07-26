@@ -46,7 +46,7 @@ class WPMTM_Admin_Import {
 			<h2><?php esc_html_e( 'Import Registrations', 'wp-tournament-manager' ); ?></h2>
 			<p class="description">
 				<?php esc_html_e( 'Upload the CSV produced by the "Pairing export" button on this event\'s ETR Registrations tab. Registration is closed before the event starts, so this import is the roster - not a way to add late entrants.', 'wp-tournament-manager' ); ?>
-				<?php esc_html_e( 'You will see a preview of the sections and players first; nothing is written until you confirm it.', 'wp-tournament-manager' ); ?>
+				<?php esc_html_e( 'A preview will be shown with the sections and players first. Nothing is written until confirmed on the next screen.', 'wp-tournament-manager' ); ?>
 			</p>
 			<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>" enctype="multipart/form-data" data-wpmtm-guard>
 				<?php wp_nonce_field( 'wpmtm_etr_upload_' . $tournament->id, 'wpmtm_etr_upload_nonce' ); ?>
@@ -101,7 +101,7 @@ class WPMTM_Admin_Import {
 				'post_type'      => 'tribe_events',
 				'post_status'    => 'publish',
 				'posts_per_page' => 30,
-				'meta_key'       => '_EventStartDate',
+				'meta_key'       => '_EventStartDate', // phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_key -- ordering the event picker chronologically requires TEC's own `_EventStartDate` meta key; TEC provides no other indexed date field, and this matches wp-etr's own limitation (see docblock above).
 				'orderby'        => 'meta_value',
 				'order'          => 'DESC',
 				'no_found_rows'  => true,
@@ -149,7 +149,7 @@ class WPMTM_Admin_Import {
 					<?php endif; ?>
 				</select>
 			</p>
-			<p class="description"><?php esc_html_e( 'Choosing an event pulls its ETR roster into this tournament for review; nothing is written until you confirm on the next screen.', 'wp-tournament-manager' ); ?></p>
+			<p class="description"><?php esc_html_e( 'Choosing an event pulls its ETR roster into this tournament for review. Nothing is written until confirmed on the next screen.', 'wp-tournament-manager' ); ?></p>
 			<?php
 			submit_button(
 				__( 'Import from this event', 'wp-tournament-manager' ),
@@ -212,7 +212,7 @@ class WPMTM_Admin_Import {
 			'success',
 			sprintf(
 				/* translators: 1: number of registrants, 2: number of sections */
-				__( 'Pulled %1$d registrants across %2$d sections from the event. Nothing is saved until you review and confirm below.', 'wp-tournament-manager' ),
+				__( 'Pulled %1$d registrants across %2$d sections from the event. Nothing is saved until reviewed and confirmed below.', 'wp-tournament-manager' ),
 				count( $parsed['rows'] ),
 				count( $parsed['sections'] )
 			)
@@ -247,7 +247,7 @@ class WPMTM_Admin_Import {
 		$file = $_FILES['etr_csv']; // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.MissingUnslash, WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- $_FILES values are validated below (error code, size cap, is_uploaded_file, extension) before use; not passed to output.
 
 		if ( ! isset( $file['error'] ) || UPLOAD_ERR_OK !== $file['error'] ) {
-			$this->set_notice( 'error', __( 'The file upload failed; please try again.', 'wp-tournament-manager' ) );
+			$this->set_notice( 'error', __( 'The file upload failed. Please try again.', 'wp-tournament-manager' ) );
 			wp_safe_redirect( $redirect_back );
 			exit;
 		}
@@ -362,7 +362,7 @@ class WPMTM_Admin_Import {
 			'success',
 			sprintf(
 				/* translators: 1: number of registrants, 2: number of sections */
-				__( 'Pulled %1$d registrants across %2$d sections from the event. Nothing is saved until you review and confirm below.', 'wp-tournament-manager' ),
+				__( 'Pulled %1$d registrants across %2$d sections from the event. Nothing is saved until reviewed and confirmed below.', 'wp-tournament-manager' ),
 				count( $parsed['rows'] ),
 				count( $parsed['sections'] )
 			)
@@ -381,14 +381,33 @@ class WPMTM_Admin_Import {
 	 * Reads an event's registrations straight from wp-etr and shapes them
 	 * into the same row format (last, first, USCF id, rating, section,
 	 * status) its own "Pairing export" CSV uses, plus a 7th cell -
-	 * photo_id - and an 8th - family_key - the CSV never carries, so
-	 * WPMTM_ETR_Import::normalize_rows() sees identical input for the
-	 * first 6 cells regardless of whether it arrived via a CSV upload or
-	 * this button, with photo_id and family_key only ever populated on
-	 * this door.
+	 * photo_id -, an 8th - family_key -, a 9th - rating_source -, a
+	 * 10th - rating_checked -, and an 11th - notes - the CSV never
+	 * carries, so WPMTM_ETR_Import::normalize_rows() sees identical input
+	 * for the first 6 cells regardless of whether it arrived via a CSV
+	 * upload or this button, with all five extra cells only ever
+	 * populated on this door. rating_source/rating_checked (docs/SPEC.md,
+	 * "Decisions (2026-07-17, rating provenance)") are read directly off
+	 * the attendee's own post meta using $r['id'] (wp-etr's own row key
+	 * for the attendee post id) - the same _wpmtm_rating_source /
+	 * _wpmtm_rating_checked meta WPMTM_Registration_Check writes, read
+	 * here without touching wp-etr's own code, same as photo_id/
+	 * family_key are read from wp-etr's row shape rather than by editing
+	 * wp-etr. notes (docs/SPEC.md, "Decisions (2026-07-17, import the
+	 * registrant note)") is read the same direct way, off ETECF's
+	 * `etecf_additional_information` key (WPMTM_ETR_Import::NOTES_FIELD)
+	 * - wp-etr's build_sections() row shape does not carry it at all
+	 * (unlike photo_id/parent_email, which wp-etr itself reads and
+	 * exposes), and wp-etr has no configurable option for this field the
+	 * way it does for uscf_id_field/rating_field, so there is no live
+	 * option to resolve; the key is read directly, then
+	 * sanitize_textarea_field()'d and defensively length-capped here in
+	 * the WP layer, the same way family_key's sanitize_email() runs here
+	 * rather than in the pure normalize_rows() (see that method's own
+	 * docblock).
 	 *
 	 * @param int $event_id Already-validated event post id.
-	 * @return array List of 8-element raw rows.
+	 * @return array List of 11-element raw rows.
 	 */
 	protected function build_rows_from_event( $event_id ) {
 		$rows = array();
@@ -398,7 +417,14 @@ class WPMTM_Admin_Import {
 				$rows[] = array(
 					isset( $r['last'] ) ? $r['last'] : '',
 					isset( $r['first'] ) ? $r['first'] : '',
-					isset( $r['uscf_id'] ) ? $r['uscf_id'] : '',
+					// wp-etr's own build_sections() already display-normalizes
+					// a pasted profile URL to digits; normalize_member_id_input()
+					// runs again here anyway (idempotent on an already-clean
+					// digit string, and a safety net for a manually-crafted
+					// row) so this door agrees with the registration check
+					// and the "Validate players" path - docs/SPEC.md,
+					// "Decisions (2026-07-16, URL-form USCF IDs)".
+					isset( $r['uscf_id'] ) ? WPMTM_USCF_Status::normalize_member_id_input( $r['uscf_id'] ) : '',
 					( isset( $r['rating'] ) && $r['rating'] > 0 ) ? $r['rating'] : '',
 					$label,
 					// Literal, untranslated: normalize_rows() matches this
@@ -421,11 +447,56 @@ class WPMTM_Admin_Import {
 					// docblock) - '' normalizes the same way an absent 8th
 					// cell does there.
 					isset( $r['parent_email'] ) ? sanitize_email( strtolower( trim( (string) $r['parent_email'] ) ) ) : '',
+					// rating_source / rating_checked: see this method's own
+					// docblock. Absent (never set by TM, or no attendee id
+					// on this row) reads as '' - normalize_rows() defaults
+					// both to null the same way it does for a CSV row.
+					isset( $r['id'] ) ? (string) get_post_meta( (int) $r['id'], WPMTM_Registration_Check::RATING_SOURCE_META, true ) : '',
+					isset( $r['id'] ) ? (string) get_post_meta( (int) $r['id'], WPMTM_Registration_Check::RATING_CHECKED_META, true ) : '',
+					// notes: see this method's own docblock. sanitize_textarea_field()
+					// here (WP layer) and mb_substr()'d to the same cap
+					// WPMTM_ETR_Import::normalize_rows() enforces again
+					// (pure, unit-tested) - belt and suspenders, not a
+					// contradiction.
+					isset( $r['id'] ) ? mb_substr( sanitize_textarea_field( (string) get_post_meta( (int) $r['id'], WPMTM_ETR_Import::NOTES_FIELD, true ) ), 0, WPMTM_ETR_Import::NOTES_MAX_LENGTH ) : '',
 				);
 			}
 		}
 
 		return $rows;
+	}
+
+	/**
+	 * Distinct ETECF section values carried by a linked event's attendees,
+	 * in the same order build_rows_from_event() (and the wp-etr
+	 * build_sections() it wraps) already groups them - ETECF's configured
+	 * section field options first, in their configured order, then any
+	 * section values present in the attendee data but not (any longer) in
+	 * that configured list (e.g. after a rename). Used by
+	 * WPMTM_Admin_Sections::render_sections_editor() to offer these as a
+	 * `<datalist>` on the section-name input (docs/SPEC.md, "Decisions
+	 * (2026-07-18, section-name suggestions from ETECF)"), so a TD is not
+	 * stuck retyping a section name registrants already chose. This is a
+	 * SUGGESTION only, never a hard constraint - the datalist does not
+	 * restrict the input's value, and the TD can still type anything.
+	 * Degrades silently to an empty array (the caller then renders no
+	 * datalist at all) when wp-etr is not active or too old to expose
+	 * build_sections(), the event id is invalid, or the event has no
+	 * attendees carrying a section value at all.
+	 *
+	 * @param int $event_id A tournament's event_post_id (0/blank when the
+	 *                       tournament has no linked event).
+	 * @return string[] Distinct section labels, possibly empty.
+	 */
+	public function event_section_labels( $event_id ) {
+		$event_id = (int) $event_id;
+		if ( $event_id <= 0 ) {
+			return array();
+		}
+		if ( ! class_exists( '\\Etr\\Plugin' ) || ! method_exists( \Etr\Plugin::instance(), 'build_sections' ) ) {
+			return array();
+		}
+		return array_keys( \Etr\Plugin::instance()->build_sections( $event_id ) );
 	}
 
 	/**
@@ -490,13 +561,77 @@ class WPMTM_Admin_Import {
 			$this->render_etr_preview( $tournament, $pending['parsed'] );
 			return true;
 		}
-		$this->set_notice( 'error', __( 'The pending import could not be found; it may have expired. Please upload the CSV again.', 'wp-tournament-manager' ) );
+		$this->set_notice( 'error', __( 'The pending import could not be found. It may have expired. Please upload the CSV again.', 'wp-tournament-manager' ) );
 		return false;
 	}
 
+	/**
+	 * USCF membership-problem warnings for the players about to be
+	 * imported (docs/SPEC.md, "Decisions (2026-07-17, no-tournament
+	 * registration checks)"). Registration-time checks now skip entirely
+	 * until a tournament is linked and rated (WPMTM_Registration_Check::
+	 * checks_enabled_for()), so this is where a membership problem first
+	 * reaches the TD once rated status IS known - a tournament always
+	 * exists by import time. Preview-only: never blocks the import, writes
+	 * nothing, and does not stamp any provenance meta (this is a read,
+	 * not a write of the official rating).
+	 *
+	 * Cache-only (never a live USCF API call): rendered as part of the
+	 * tournament edit screen, which the USCF-call-discipline table in
+	 * docs/wpmtm-handoff-1.3.md holds to ZERO calls, so a large roster
+	 * preview costs nothing extra - it only surfaces what the
+	 * registration-time lookup (or a prior "Validate players" run)
+	 * already cached. A player with no cached result yet is silently
+	 * skipped here, same as an unreachable API: this is a heads-up, not a
+	 * validator, and "Validate players" remains the on-demand path for a
+	 * fresh check.
+	 *
+	 * Unrated tournaments skip this entirely, same anti-goal as
+	 * registration (TD-PERSONA.md: no rated machinery on casual nights).
+	 *
+	 * @param object $tournament wpmtm_tournaments row.
+	 * @param array  $rows       $parsed['rows'], WPMTM_ETR_Import::parse()/
+	 *                            normalize_rows() shape.
+	 * @return array List of warning strings, one per non-skipped row with a
+	 *               USCF ID on file and a cached FAIL verdict.
+	 */
+	protected function membership_warnings( $tournament, array $rows ) {
+		if ( ! WPMTM_Registration_Check::checks_enabled_for( $tournament ) ) {
+			return array();
+		}
+
+		$event_end = '';
+		if ( ! empty( $tournament->event_post_id ) ) {
+			$meta      = get_post_meta( (int) $tournament->event_post_id, '_EventEndDate', true );
+			$event_end = is_string( $meta ) ? substr( $meta, 0, 10 ) : '';
+		}
+		$through = WPMTM_USCF_Status::resolve_through_date( $tournament->end_date, $event_end );
+
+		$status   = WPMTM_USCF_Status::instance();
+		$warnings = array();
+		foreach ( $rows as $row ) {
+			if ( ! empty( $row['skip'] ) || '' === $row['mem_id'] ) {
+				continue;
+			}
+			// cache_only=true - see docblock above; never a live call from a page render.
+			$result = $status->validate_member( $row['mem_id'], $through, false, true );
+			if ( 'FAIL' === $result['verdict'] ) {
+				$player_label = trim( $row['first_name'] . ' ' . $row['last_name'] );
+				$warnings[]   = sprintf(
+					/* translators: 1: player name, 2: USCF membership problem reason */
+					__( '%1$s: USCF membership problem - %2$s.', 'wp-tournament-manager' ),
+					$player_label,
+					$result['reason']
+				);
+			}
+		}
+		return $warnings;
+	}
+
 	protected function render_etr_preview( $tournament, $parsed ) {
-		$existing_sections = WPMTM_Repository::get_sections( $tournament->id );
-		$skipped_rows       = array_values(
+		$existing_sections   = WPMTM_Repository::get_sections( $tournament->id );
+		$membership_warnings = $this->membership_warnings( $tournament, $parsed['rows'] );
+		$skipped_rows        = array_values(
 			array_filter(
 				$parsed['rows'],
 				function ( $r ) {
@@ -525,12 +660,12 @@ class WPMTM_Admin_Import {
 			<?php $this->render_notices(); ?>
 
 			<div class="notice notice-info inline">
-				<p><?php esc_html_e( 'Registration is closed before the event; this import becomes the roster. Nothing is written to the database until you click "Confirm Import" below.', 'wp-tournament-manager' ); ?></p>
+				<p><?php esc_html_e( 'Registration is closed before the event. This import becomes the roster. Nothing is written to the database until "Confirm Import" below is clicked.', 'wp-tournament-manager' ); ?></p>
 				<ul>
 					<li><?php esc_html_e( 'Create new section adds that CSV section to this tournament as a new section.', 'wp-tournament-manager' ); ?></li>
 					<li><?php esc_html_e( 'Map to existing section adds the players into a section that already exists, appending them after its current pairing numbers.', 'wp-tournament-manager' ); ?></li>
 					<li><?php esc_html_e( 'Skip this section means none of that section\'s players are imported.', 'wp-tournament-manager' ); ?></li>
-					<li><?php esc_html_e( 'Rated controls whether the section goes into the USCF export; unrated sections are never included. New sections start checked to match this tournament\'s own Rated setting - section names are not a reliable signal (a section named "U1800" can still be rated), so review each checkbox before confirming.', 'wp-tournament-manager' ); ?></li>
+					<li><?php esc_html_e( 'Rated controls whether the section goes into the USCF export. Unrated sections are never included. New sections start checked to match this tournament\'s own Rated setting - section names are not a reliable signal (a section named "U1800" can still be rated), so review each checkbox before confirming.', 'wp-tournament-manager' ); ?></li>
 					<li><?php esc_html_e( 'Split into quads groups the players by rating into 4-player round robin sections instead of one Swiss section: "Name Quad 1", "Quad 2", and so on. Leftover players (1 to 3 after the last full quad) are folded into a small Swiss section instead of being left as a short quad. Only available for Create new section.', 'wp-tournament-manager' ); ?></li>
 					<li><?php esc_html_e( 'The warnings list and the "Rows that will not be imported" table below show exactly what will not be imported and why.', 'wp-tournament-manager' ); ?></li>
 				</ul>
@@ -606,13 +741,13 @@ class WPMTM_Admin_Import {
 							</td>
 							<td><?php echo esc_html( $count ); ?></td>
 							<td>
-								<label<?php echo $rated_readonly ? ' title="' . esc_attr__( 'This section already exists; it keeps its own Rated setting.', 'wp-tournament-manager' ) . '"' : ''; ?>>
+								<label<?php echo $rated_readonly ? ' title="' . esc_attr__( 'This section already exists. It keeps its own Rated setting.', 'wp-tournament-manager' ) . '"' : ''; ?>>
 									<input type="checkbox" name="section_map[<?php echo esc_attr( $i ); ?>][rated]" value="1" <?php checked( $rated_default ); ?> <?php disabled( $rated_readonly ); ?>>
 									<?php esc_html_e( 'Rated', 'wp-tournament-manager' ); ?>
 								</label>
 							</td>
 							<td>
-								<label<?php echo $quads_unavailable ? ' title="' . esc_attr__( 'Only available for Create new section; a roster mapped onto an existing section is never split.', 'wp-tournament-manager' ) . '"' : ''; ?>>
+								<label<?php echo $quads_unavailable ? ' title="' . esc_attr__( 'Only available for Create new section. A roster mapped onto an existing section is never split.', 'wp-tournament-manager' ) . '"' : ''; ?>>
 									<input type="checkbox" name="section_map[<?php echo esc_attr( $i ); ?>][quads]" value="1" <?php disabled( $quads_unavailable ); ?>>
 									<?php esc_html_e( 'Split into quads', 'wp-tournament-manager' ); ?>
 								</label>
@@ -639,7 +774,7 @@ class WPMTM_Admin_Import {
 										<?php
 										printf(
 											/* translators: 1: number of players already in the matched section, 2: pairing number the import will append after (same value as %1$d) */
-											esc_html__( 'This section already has %1$d players; importing will append after pairing number %2$d, which is usually wrong for a re-import. Delete the section\'s players first if you are re-importing a corrected file.', 'wp-tournament-manager' ),
+											esc_html__( 'This section already has %1$d players. Importing will append after pairing number %2$d, which is usually wrong for a re-import. Delete the section\'s players first when re-importing a corrected file.', 'wp-tournament-manager' ),
 											(int) $matched_player_count,
 											(int) $matched_player_count
 										);
@@ -656,6 +791,16 @@ class WPMTM_Admin_Import {
 					<h2><?php esc_html_e( 'Warnings', 'wp-tournament-manager' ); ?></h2>
 					<ul class="wpmtm-etr-warnings">
 						<?php foreach ( $parsed['warnings'] as $warning ) : ?>
+							<li><?php echo esc_html( $warning ); ?></li>
+						<?php endforeach; ?>
+					</ul>
+				<?php endif; ?>
+
+				<?php if ( $membership_warnings ) : ?>
+					<h2><?php esc_html_e( 'USCF membership', 'wp-tournament-manager' ); ?></h2>
+					<p class="description"><?php esc_html_e( 'These players are still imported. Nothing is blocked. Resolve membership problems before the event via ETR "Mark no-show", or re-check with the "Validate players" button.', 'wp-tournament-manager' ); ?></p>
+					<ul class="wpmtm-etr-warnings">
+						<?php foreach ( $membership_warnings as $warning ) : ?>
 							<li><?php echo esc_html( $warning ); ?></li>
 						<?php endforeach; ?>
 					</ul>
@@ -721,7 +866,7 @@ class WPMTM_Admin_Import {
 
 		$pending = $this->get_etr_import_transient();
 		if ( ! $pending || (int) $pending['tournament_id'] !== $tournament_id || empty( $pending['parsed'] ) || ! empty( $pending['parsed']['error'] ) ) {
-			$this->set_notice( 'error', __( 'The pending import could not be found; it may have expired. Please upload the CSV again.', 'wp-tournament-manager' ) );
+			$this->set_notice( 'error', __( 'The pending import could not be found. It may have expired. Please upload the CSV again.', 'wp-tournament-manager' ) );
 			wp_safe_redirect( $redirect_back );
 			exit;
 		}
@@ -734,12 +879,13 @@ class WPMTM_Admin_Import {
 		// import could not be found" notice a genuinely expired transient
 		// would produce, rather than importing again.
 		if ( ! delete_transient( $this->etr_import_transient_key() ) ) {
-			$this->set_notice( 'error', __( 'The pending import could not be found; it may have expired. Please upload the CSV again.', 'wp-tournament-manager' ) );
+			$this->set_notice( 'error', __( 'The pending import could not be found. It may have expired. Please upload the CSV again.', 'wp-tournament-manager' ) );
 			wp_safe_redirect( $redirect_back );
 			exit;
 		}
 
 		$parsed     = $pending['parsed'];
+		// phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- each row is sanitized and whitelist-checked below (sanitize_text_field()/sanitize_key() against $known_sections and the mode enum); nonce already verified above via check_admin_referer().
 		$posted_map = ( isset( $_POST['section_map'] ) && is_array( $_POST['section_map'] ) ) ? wp_unslash( $_POST['section_map'] ) : array();
 
 		$known_sections = array_column( $parsed['sections'], 'name' );
@@ -777,7 +923,7 @@ class WPMTM_Admin_Import {
 			// instead of having to re-upload the CSV after a mid-import
 			// failure.
 			set_transient( $this->etr_import_transient_key(), $pending, 15 * MINUTE_IN_SECONDS );
-			$this->set_notice( 'error', __( 'The import could not be completed; please try confirming again.', 'wp-tournament-manager' ) );
+			$this->set_notice( 'error', __( 'The import could not be completed. Please try confirming again.', 'wp-tournament-manager' ) );
 			wp_safe_redirect( $redirect_back );
 			exit;
 		}

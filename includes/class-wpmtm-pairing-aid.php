@@ -38,6 +38,38 @@ class WPMTM_Pairing_Aid {
 	}
 
 	/**
+	 * Auto-fill rounds count for a round-robin-like section (docs/SPEC.md,
+	 * "Decisions (2026-07-16, auto-set Round Robin / Quad rounds)"):
+	 * every player faces every other player exactly once, so an even
+	 * roster needs player_count - 1 rounds (the standard circle-method
+	 * round count) and an odd roster needs player_count rounds (everyone
+	 * sits out exactly one round via a bye). Quad ('Q') is always fixed
+	 * at 3 rounds regardless of its actual player count - a quad is a
+	 * 4-player round robin by definition, and a partially-filled quad
+	 * still runs the same 3-round schedule.
+	 *
+	 * Pure and WP-independent, unit-tested directly.
+	 *
+	 * @param string $trn_type     Section pairing type; only 'R' and 'Q'
+	 *                              are meaningful here (see RR_TYPES).
+	 * @param int    $player_count Current roster size for the section.
+	 * @return int Suggested total rounds; 0 for a Round Robin section
+	 *             with fewer than 2 players (nothing to schedule yet).
+	 */
+	public static function suggested_rounds( $trn_type, $player_count ) {
+		if ( 'Q' === $trn_type ) {
+			return 3;
+		}
+
+		$player_count = max( 0, (int) $player_count );
+		if ( $player_count < 2 ) {
+			return 0;
+		}
+
+		return ( 0 === $player_count % 2 ) ? $player_count - 1 : $player_count;
+	}
+
+	/**
 	 * @param array  $players       List of assoc rows: id, pair_num, name, rating,
 	 *                              and optionally 'withdrawn_after_round' (int|null;
 	 *                              absent is treated the same as null/active).

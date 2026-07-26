@@ -25,11 +25,11 @@ class WPMTM_Export_Builder {
 	 *                          zipcode, send_crosstable, rated, head_td_id,
 	 *                          assistant_td_id (and any other row columns,
 	 *                          which are ignored). head_td_id/assistant_td_id
-	 *                          are the per-tournament TD overrides (docs/
-	 *                          SPEC.md, "Decisions (2026-07-11, per-
-	 *                          tournament TD overrides and Chief TD
-	 *                          rename)"): when non-empty they win over the
-	 *                          $options club defaults below.
+	 *                          are the tournament's OWN TD IDs and export
+	 *                          verbatim with no Settings fallback (docs/
+	 *                          SPEC.md, 2026-07-17, "TD default removal"): a
+	 *                          blank field here means that TD is genuinely
+	 *                          absent from this tournament.
 	 * @param array $options    Plain array: affiliate_id, chief_td_id,
 	 *                          assistant_td_id, default_city, default_state,
 	 *                          default_zipcode (matches WPMTM_Plugin::get_opts()).
@@ -44,34 +44,7 @@ class WPMTM_Export_Builder {
 	 *               new WPMTM_USCF_Export( $data ) / new WPMTM_USCF_Validator( $data, true ).
 	 */
 	public static function build( array $tournament, array $options, array $sections ) {
-		$data = array(
-			'event_name'      => isset( $tournament['name'] ) ? (string) $tournament['name'] : '',
-			'begin_date'      => self::format_date( isset( $tournament['begin_date'] ) ? $tournament['begin_date'] : '' ),
-			'end_date'        => self::format_date( isset( $tournament['end_date'] ) ? $tournament['end_date'] : '' ),
-			'affiliate_id'    => isset( $options['affiliate_id'] ) ? (string) $options['affiliate_id'] : '',
-			'city'            => self::first_nonblank( isset( $tournament['city'] ) ? $tournament['city'] : '', isset( $options['default_city'] ) ? $options['default_city'] : '' ),
-			'state'           => self::first_nonblank( isset( $tournament['state'] ) ? $tournament['state'] : '', isset( $options['default_state'] ) ? $options['default_state'] : '' ),
-			'zipcode'         => self::first_nonblank( isset( $tournament['zipcode'] ) ? $tournament['zipcode'] : '', isset( $options['default_zipcode'] ) ? $options['default_zipcode'] : '' ),
-			'send_crosstable' => ! empty( $tournament['send_crosstable'] ) ? 'Y' : 'N',
-			// 'chief_td_id' / 'assistant_td_id': the data key names and the
-			// DBF field names they feed (H_CTD_ID/S_CTD_ID) are unchanged -
-			// the project's non-brittle naming rule keeps internal keys and
-			// on-disk USCF field names stable even after a user-facing
-			// rename (docs/SPEC.md, "Decisions (2026-07-11, per-tournament
-			// TD overrides and Chief TD rename)"). Only the label the TD sees
-			// (Settings, the tournament form, validator messages) says "Chief
-			// TD" now. Effective value: the tournament's own head/assistant
-			// TD override when set, else the club-wide Settings default.
-			'chief_td_id'     => self::first_nonblank(
-				isset( $tournament['head_td_id'] ) ? $tournament['head_td_id'] : '',
-				isset( $options['chief_td_id'] ) ? $options['chief_td_id'] : ''
-			),
-			'assistant_td_id' => self::first_nonblank(
-				isset( $tournament['assistant_td_id'] ) ? $tournament['assistant_td_id'] : '',
-				isset( $options['assistant_td_id'] ) ? $options['assistant_td_id'] : ''
-			),
-			'sections'        => array(),
-		);
+		$data = self::build_header( $tournament, $options );
 
 		$rated_sections = array();
 		foreach ( $sections as $section ) {
@@ -84,18 +57,92 @@ class WPMTM_Export_Builder {
 			$rated_sections[] = $section;
 		}
 
-		// docs/SPEC.md, "Decisions (2026-07-09, May fixtures)": the desktop
-		// pairing program's own export renumbers the included (rated)
-		// sections contiguously from 1, in original sec_num order - unrated
-		// sections are simply absent, not skipped-over gaps left in the
-		// numbering. Sort by each section's original sec_num first so the
-		// renumbering below is stable and independent of the order
-		// $sections happens to arrive in, then overwrite sec_num with the
-		// new contiguous value; S_LST_PAIR and H_TOT_SECT fall out
-		// consistent with this automatically since both are derived counts
-		// (player count, section count) rather than copies of sec_num.
+		$data['sections'] = self::build_renumbered_sections( $rated_sections );
+
+		return $data;
+	}
+
+	/**
+	 * CSV export's builder (2026-07-24, "Tournament Export" section): same
+	 * shape as build() above, but every section is included regardless of
+	 * its own 'rated' flag - a CSV is a plain results dump for a TD's own
+	 * records or for importing into other tournament software, not a USCF
+	 * submission, so there is no reason to drop a tournament's unrated
+	 * sections from it the way the DBF export must. header fields that only
+	 * mean anything for a USCF submission (affiliate_id, chief_td_id,
+	 * assistant_td_id) are still populated for consistency with build()'s
+	 * shape, but WPMTM_CSV_Export does not read them.
+	 *
+	 * @return array Structured data ready for new WPMTM_CSV_Export( $data )
+	 *               / new WPMTM_USCF_Validator( $data, false ) - the
+	 *               $rated=false constructor arg is what skips the
+	 *               affiliate/TD/rating-system-identity checks that make no
+	 *               sense outside a USCF submission (see
+	 *               WPMTM_Admin_Export::build_csv_report()'s docblock).
+	 */
+	public static function build_for_csv( array $tournament, array $options, array $sections ) {
+		$data              = self::build_header( $tournament, $options );
+		$data['sections']  = self::build_renumbered_sections( $sections );
+		return $data;
+	}
+
+	/**
+	 * Every header field build()/build_for_csv() share - everything in the
+	 * structured data shape except 'sections'.
+	 */
+	protected static function build_header( array $tournament, array $options ) {
+		return array(
+			'event_name'      => isset( $tournament['name'] ) ? html_entity_decode( (string) $tournament['name'], ENT_QUOTES, 'UTF-8' ) : '',
+			'begin_date'      => self::format_date( isset( $tournament['begin_date'] ) ? $tournament['begin_date'] : '' ),
+			'end_date'        => self::format_date( isset( $tournament['end_date'] ) ? $tournament['end_date'] : '' ),
+			// Per-tournament affiliate override with a club-wide fallback
+			// (docs/SPEC.md, "Decisions (2026-07-18, per-tournament USCF
+			// affiliate ID)") - unlike chief_td_id/assistant_td_id below,
+			// this one intentionally falls back: a per-event override with
+			// a club-wide default, not a "genuinely absent" signal.
+			'affiliate_id'    => self::first_nonblank( isset( $tournament['affiliate_id'] ) ? $tournament['affiliate_id'] : '', isset( $options['affiliate_id'] ) ? $options['affiliate_id'] : '' ),
+			'city'            => self::first_nonblank( isset( $tournament['city'] ) ? $tournament['city'] : '', isset( $options['default_city'] ) ? $options['default_city'] : '' ),
+			'state'           => self::first_nonblank( isset( $tournament['state'] ) ? $tournament['state'] : '', isset( $options['default_state'] ) ? $options['default_state'] : '' ),
+			'zipcode'         => self::first_nonblank( isset( $tournament['zipcode'] ) ? $tournament['zipcode'] : '', isset( $options['default_zipcode'] ) ? $options['default_zipcode'] : '' ),
+			'send_crosstable' => ! empty( $tournament['send_crosstable'] ) ? 'Y' : 'N',
+			// 'chief_td_id' / 'assistant_td_id': the data key names and the
+			// DBF field names they feed (H_CTD_ID/S_CTD_ID) are unchanged -
+			// the project's non-brittle naming rule keeps internal keys and
+			// on-disk USCF field names stable even after a user-facing
+			// rename (docs/SPEC.md, "Decisions (2026-07-11, per-tournament
+			// TD overrides and Chief TD rename)"). Only the label the TD sees
+			// (Settings, the tournament form, validator messages) says "Chief
+			// TD" now. Value: the tournament's own head/assistant TD field,
+			// verbatim, with NO Settings fallback (docs/SPEC.md, 2026-07-17,
+			// "TD default removal") - a blank tournament field exports blank,
+			// not the club-wide Settings default, since a tournament that
+			// never had an assistant TD is not a phantom Settings TD.
+			'chief_td_id'     => isset( $tournament['head_td_id'] ) ? (string) $tournament['head_td_id'] : '',
+			'assistant_td_id' => isset( $tournament['assistant_td_id'] ) ? (string) $tournament['assistant_td_id'] : '',
+			'sections'        => array(),
+		);
+	}
+
+	/**
+	 * docs/SPEC.md, "Decisions (2026-07-09, May fixtures)": the desktop
+	 * pairing program's own export renumbers the included sections
+	 * contiguously from 1, in original sec_num order - an excluded
+	 * (unrated, for build()'s caller) section is simply absent, not a
+	 * skipped-over gap left in the numbering. Sort by each section's
+	 * original sec_num first so the renumbering below is stable and
+	 * independent of the order $sections happens to arrive in, then
+	 * overwrite sec_num with the new contiguous value; S_LST_PAIR and
+	 * H_TOT_SECT fall out consistent with this automatically since both are
+	 * derived counts (player count, section count) rather than copies of
+	 * sec_num. build_for_csv() reuses this same renumbering for its own
+	 * (unfiltered) section list, for the same reason: a CSV with sections
+	 * numbered 1, 3, 4 because section 2 quietly vanished reads as a bug.
+	 *
+	 * @return array Built section rows, ready to assign to $data['sections'].
+	 */
+	protected static function build_renumbered_sections( array $sections ) {
 		usort(
-			$rated_sections,
+			$sections,
 			function ( $a, $b ) {
 				$a_num = isset( $a['sec_num'] ) ? (int) $a['sec_num'] : 0;
 				$b_num = isset( $b['sec_num'] ) ? (int) $b['sec_num'] : 0;
@@ -103,13 +150,13 @@ class WPMTM_Export_Builder {
 			}
 		);
 
+		$built   = array();
 		$sec_num = 1;
-		foreach ( $rated_sections as $section ) {
+		foreach ( $sections as $section ) {
 			$section['sec_num'] = $sec_num++;
-			$data['sections'][] = self::build_section( $section );
+			$built[]             = self::build_section( $section );
 		}
-
-		return $data;
+		return $built;
 	}
 
 	// -----------------------------------------------------------------
@@ -126,10 +173,16 @@ class WPMTM_Export_Builder {
 		$out = array(
 			'sec_num'  => isset( $section['sec_num'] ) ? (int) $section['sec_num'] : 0,
 			'sec_name' => isset( $section['sec_name'] ) ? (string) $section['sec_name'] : '',
+			// Ignored by WPMTM_USCF_Export/WPMTM_USCF_Validator (build()'s
+			// caller only ever passes rated sections in the first place, so
+			// this is always 'Y' there) - carried through for
+			// WPMTM_CSV_Export, whose whole point is showing rated AND
+			// unrated sections side by side (build_for_csv() above).
+			'rated'    => ! empty( $section['rated'] ) ? 'Y' : 'N',
 			'r_system' => isset( $section['r_system'] ) ? (string) $section['r_system'] : '',
 			'timectl'  => isset( $section['timectl'] ) ? (string) $section['timectl'] : '',
 			// Always 'S', regardless of the section's internal trn_type.
-			// The US Chess TD/Affiliate FAQ states a round robin may be
+			// The USCF TD/Affiliate FAQ states a round robin may be
 			// reported either in the round robin grid format, or "treat it
 			// as a Swiss using the Crenshaw-Berger pairings", and both
 			// methods "will generate the same ratings" - so Tournament

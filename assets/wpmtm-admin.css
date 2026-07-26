@@ -121,6 +121,22 @@
 	border-left-color: #d63638;
 }
 
+/* Tournament Export's CSV/USCF download forms (2026-07-24): a flex column
+   so both buttons - and each button's own "Fix the errors above first"
+   description line, when disabled - line up at the same left edge and
+   consistent spacing, regardless of how many findings each export's own
+   report above it printed. */
+.wpmtm-wrap .wpmtm-export-buttons {
+	display: flex;
+	flex-direction: column;
+	align-items: flex-start;
+	gap: 12px;
+}
+
+.wpmtm-wrap .wpmtm-export-buttons form {
+	margin: 0;
+}
+
 /* Players editor avatar column (FIX 4): 32px, smaller than the 40px front-end
    chip, to fit a dense repeater row alongside the other columns. */
 .wpmtm-wrap .wpmtm-col-photo {
@@ -140,29 +156,25 @@
 	object-fit: cover;
 }
 
-/* Guided TD walkthrough (includes/class-wpmtm-wizard.php). Theme-neutral
- * WordPress admin blues/greys, matching core notice styling rather than any
- * front-end theme color. */
-.wpmtm-wizard-card {
-	border-left-color: #2271b1;
-	padding: 14px 16px 16px;
-	margin-top: 16px;
+/* Imported registrant note (docs/SPEC.md, "Decisions (2026-07-17, import
+   the registrant note)"): kept small and muted (the core .description
+   class already handles that) so it never dominates the row; white-space
+   preserves the registrant's own line breaks since it is free text, not a
+   single-line field. */
+.wpmtm-wrap .wpmtm-player-note {
+	white-space: pre-wrap;
+	max-width: 260px;
 }
 
-.wpmtm-wizard-heading {
-	margin: 0 0 8px;
-	font-size: 14px;
-	text-transform: uppercase;
-	letter-spacing: 0.04em;
-	color: #2271b1;
-}
-
-.wpmtm-wizard-progress {
-	margin: 0 0 6px;
-	font-weight: 600;
-	color: #1d2327;
-}
-
+/* .wpmtm-wizard-dots / .wpmtm-wizard-dot below predate the 2026-07-16
+ * stepper redesign and were already unused by any PHP output before
+ * 2026-07-22 - left alone as pre-existing, unrelated dead CSS rather than
+ * folded into this cleanup. Every OTHER .wpmtm-wizard-* rule that used to
+ * sit here (.wpmtm-wizard-card/-heading/-progress/-line/-actions/-exit,
+ * .wpmtm-wizard-offer p, .wpmtm-wizard-offer-dismiss) styled render_card()/
+ * render_offer() in includes/class-wpmtm-wizard.php, both removed
+ * 2026-07-22 (owner request: no setup guide notice on the Tournaments list
+ * page, matching Settings) - removed here too, now genuinely unreachable. */
 .wpmtm-wizard-dots {
 	margin: 0 0 12px;
 	line-height: 1;
@@ -183,35 +195,248 @@
 	border-color: #2271b1;
 }
 
-.wpmtm-wizard-line {
-	margin: 0 0 8px;
-	color: #1d2327;
+/* Setup guide stepper panel (includes/class-wpmtm-wizard.php,
+ * render_panel(); docs/SPEC.md, "Design (2026-07-16, setup guide
+ * redesign)"). A native <details>/<summary> element, not a WordPress
+ * admin notice, so a third-party "hide notices" plugin can never remove
+ * it - the problem this redesign solves. */
+.wpmtm-setup-guide-panel {
+	margin: 16px 0;
+	padding: 12px 16px;
+	background: #fff;
+	border: 1px solid #c3c4c7;
+	border-left: 4px solid #2271b1;
 }
 
-.wpmtm-wizard-actions {
-	margin: 12px 0 0;
-}
-
-.wpmtm-wizard-actions .button-primary {
-	margin-right: 12px;
-}
-
-.wpmtm-wizard-exit {
-	color: #787c82;
-	text-decoration: underline;
-}
-
-.wpmtm-wizard-offer p {
+/* 2026-07-22 (owner request): a fixed row height so the "SETUP GUIDE" title,
+   the step chips, and the "Step N of N" progress all sit on one horizontal
+   baseline. align-items:center already centered them, but the chips
+   (padding + border) are taller than the plain title/progress text, so a
+   shared min-height + matched line-height keeps the row visually level and
+   its height stable whether or not the chips wrap onto a second line. */
+.wpmtm-setup-guide-summary {
 	display: flex;
 	flex-wrap: wrap;
 	align-items: center;
-	gap: 10px;
-	margin: 0.5em 0;
+	gap: 8px 16px;
+	min-height: 24px;
+	/* font-size + line-height are pinned (2026-07-23): on a front-end event
+	   page the theme's own larger base font (~18px / 1.5) was inflating the
+	   header and its chips, which then wrapped and threw the title, chips, and
+	   "Step N of N" onto different lines. wp-admin never showed this because
+	   its base font is smaller. Pinning both makes the header render the same
+	   compact, aligned way on both surfaces. */
+	font-size: 13px;
+	line-height: 22px;
+	cursor: pointer;
+	font-weight: 600;
+	color: #1d2327;
 }
 
-.wpmtm-wizard-offer-dismiss {
-	color: #787c82;
+.wpmtm-setup-guide-title {
+	flex-shrink: 0;
+	text-transform: uppercase;
+	font-size: 12px;
+	letter-spacing: 0.04em;
+	color: #2271b1;
+}
+
+.wpmtm-setup-guide-stepper {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 6px;
+	/* line-height pinned to match the title/progress (2026-07-23), so a
+	   wrapped row of chips on a large-font theme does not tower over the rest
+	   of the header. See .wpmtm-setup-guide-summary. */
+	font-size: 12px;
+	line-height: 22px;
+	font-weight: 400;
+	list-style: none;
+	/* !important (2026-07-23): on the front-end event page the theme scopes a
+	   taller rule at an <ol> inside its content wrapper (e.g. `.entry-content
+	   ol { margin-bottom: 16px }`), which outranks this single-class selector
+	   and gave the stepper a 16px bottom margin. That made the header's flex
+	   row 40px tall instead of ~28px, pinning the step chips to the TOP of the
+	   row (so they no longer lined up with the "SETUP GUIDE" title / "Step N of
+	   N") AND leaving an empty gap below the chips before the Status line - the
+	   two front-end-only bugs the owner reported. Forcing 0 collapses the row
+	   back to its content height. Inert in wp-admin, which has no such wrapper. */
+	margin: 0 !important;
+	padding: 0 !important;
+}
+
+.wpmtm-setup-guide-stepper li {
+	display: contents;
+}
+
+.wpmtm-setup-guide-progress {
+	font-size: 12px;
+	color: #8c8f94;
+	white-space: nowrap;
+}
+
+/* Disclosure triangle (2026-07-21): .wpmtm-setup-guide-summary's own
+   display:flex above suppresses the native <summary> marker in every
+   browser that draws one (the marker only appears in the list-item
+   display mode), so without this the panel has no visible affordance
+   that it toggles at all. margin-left: auto pushes it to the rightmost
+   end of the flex row regardless of stepper width; the [open] rule
+   rotates the same right-pointing triangle into a downward one instead
+   of swapping glyphs. */
+.wpmtm-setup-guide-marker {
+	margin-left: auto;
+	flex-shrink: 0;
+	/* 2026-07-23 (owner request): a larger touch/click target. The visible
+	   triangle stays small (drawn on ::before), but the element itself is a
+	   44x28 box centred on it, so aiming at the disclosure is forgiving. The
+	   whole <summary> already toggles the panel; this just makes the marker
+	   itself an easy target rather than a 6px sliver. */
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	width: 44px;
+	height: 28px;
+}
+
+.wpmtm-setup-guide-marker::before {
+	content: "";
+	width: 0;
+	height: 0;
+	border-top: 5px solid transparent;
+	border-bottom: 5px solid transparent;
+	border-left: 6px solid #50575e;
+	transition: transform 0.15s ease;
+}
+
+.wpmtm-setup-guide-panel[open] .wpmtm-setup-guide-marker::before {
+	transform: rotate(90deg);
+}
+
+/* 2026-07-21: step chips became clickable (assets/wpmtm-admin.js,
+   Behavior 9) - cursor and a focus-visible outline mark that, matching
+   the same treatment .wpmtm-section-tab (assets/wpmtm-frontend.css) gives
+   its own clickable chips. */
+.wpmtm-setup-guide-step {
+	padding: 2px 10px;
+	border-radius: 12px;
+	border: 1px solid #c3c4c7;
+	background: #f0f0f1;
+	color: #50575e;
+	font-size: 12px;
+	cursor: pointer;
+}
+
+.wpmtm-setup-guide-step:focus-visible {
+	outline: 2px solid #2271b1;
+	outline-offset: 1px;
+}
+
+.wpmtm-setup-guide-step--completed {
+	background: #d5e8d4;
+	border-color: #2c5c2e;
+	color: #2c5c2e;
+}
+
+.wpmtm-setup-guide-step--current {
+	background: #2271b1;
+	border-color: #2271b1;
+	color: #fff;
+}
+
+/* 2026-07-22 (owner request): Status / Next step render small, matching the
+   font size of description text on the TM admin pages this panel sits on, so
+   the guide reads as secondary guidance rather than competing with the form. */
+.wpmtm-setup-guide-body {
+	margin-top: 12px;
+	font-size: 13px;
+	line-height: 1.6;
+}
+
+/* font-size set on the line itself, class-level (2026-07-23): the line is a
+   <div> (see render_panel()'s note on why it is not a <p>), and pinning the
+   size here keeps Status / Next step uniformly small on both wp-admin and the
+   front-end event page, where the theme's own font rules would otherwise take
+   over. */
+.wpmtm-setup-guide-line {
+	margin: 0 0 8px;
+	/* 13px (2026-07-23, owner request): the Status / Next step lines read a
+	   touch too small at 12px next to the header bar, so they match the
+	   guide header's own size now. Class-level so it holds on the front-end
+	   event page too, where the theme's own font rules would otherwise win. */
+	font-size: 13px;
+	line-height: 1.6;
+	color: #1d2327;
+}
+
+/* Link-styled submit button for the {lock_link}/{unlock_link} tokens in the
+   Finish step's copy (WPMTM_Wizard::lock_form_token()): a real nonced POST
+   form, but the button sits inline in the sentence and reaches its form by
+   the HTML5 form= attribute. The form itself carries the `hidden` attribute
+   and never renders; this keeps it out of the flow on themes that would
+   otherwise revert [hidden] to a visible block. */
+.wpmtm-lockform {
+	display: none;
+}
+
+.wpmtm-linkbtn {
+	padding: 0;
+	border: 0;
+	background: none;
+	color: #2271b1;
+	font: inherit;
+	cursor: pointer;
 	text-decoration: underline;
+}
+
+.wpmtm-linkbtn:hover,
+.wpmtm-linkbtn:focus {
+	color: #135e96;
+}
+
+/* Contextual-help (info) icon at the end of the Next step line
+   (2026-07-23, replaced the old footer "Documentation" link): opens the
+   plugin README, deep-linked to this step's section, in a popup window
+   (assets/wpmtm-admin.js README popup). inline-flex keeps the glyph on the
+   same baseline as the sentence; the padding makes it an easy target. */
+.wpmtm-setup-guide-help {
+	display: inline-flex;
+	align-items: center;
+	/* Tight to the sentence (2026-07-23, owner request): a single 3px space,
+	   no inner padding, so the info glyph sits right after the Next step text
+	   instead of floating a visible gap out from it. */
+	margin-left: 3px;
+	padding: 0;
+	font-size: 14px;
+	line-height: 1;
+	/* !important + no border: the front-end theme underlines every <a> (and
+	   some themes add a bottom border on links), which drew a line under the
+	   info glyph on the event page. Force it off there without touching the
+	   deliberately-underlined .wpmtm-linkbtn. */
+	text-decoration: none !important;
+	border-bottom: 0 !important;
+	vertical-align: middle;
+	/* 2026-07-24, owner request (2 rounds): the emoji glyph sits low against
+	   the sentence's text baseline. No CSS property vertically centers an
+	   emoji glyph against surrounding text reliably - browsers render emoji
+	   from their own color-font metrics, not the surrounding text font's, so
+	   align-items:center/vertical-align both center the glyph's own box, not
+	   its ink relative to the text. A fixed offset tuned by eye is the
+	   normal fix for this; -2px is that number for this glyph/font stack. */
+	position: relative;
+	top: -2px;
+}
+
+.wpmtm-setup-guide-help:hover,
+.wpmtm-setup-guide-help:focus {
+	opacity: 0.75;
+}
+
+.wpmtm-setup-guide-warning {
+	margin: 8px 0 0;
+	padding: 8px 10px;
+	background: #fcf0f1;
+	border-left: 4px solid #d63638;
+	color: #1d2327;
 }
 
 /* Change 6: Lock/unlock control on the Edit Tournament screen. Matches
@@ -225,7 +450,15 @@
  * line-height that a plain text button's line-height does not have).
  */
 .wpmtm-lock-control {
-	margin: 8px 0 16px;
+	display: inline-block;
+	vertical-align: middle;
+	margin: 8px 8px 16px 0;
+}
+
+/* Owner request (2026-07-21): the setup guide button sits to the right of
+   Lock/Unlock instead of at the very top of the page next to the <h1>. */
+.wpmtm-lock-control + .button {
+	vertical-align: middle;
 }
 
 .wpmtm-lock-btn {

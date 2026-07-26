@@ -47,8 +47,9 @@ class WPMTM_Pairing_Suggest {
 	 * )
 	 */
 	public static function suggest( array $players, array $games, array $byes, $round, $trn_type = 'S', $sec_name = '' ) {
-		$round = (int) $round;
-		$tally = WPMTM_Scoring::tally( $players, $games, $byes );
+		$round   = (int) $round;
+		$players = self::suppress_group_family_keys( $players );
+		$tally   = WPMTM_Scoring::tally( $players, $games, $byes );
 
 		// Active for this round: not withdrawn before it, and not already
 		// on a board or bye in it.
@@ -87,33 +88,89 @@ class WPMTM_Pairing_Suggest {
 
 	/**
 	 * Whether two players count as the same family for pairing-avoidance
-	 * purposes: best effort, not a guarantee. Two independent signals, either
-	 * one is enough:
+	 * purposes: best effort, not a guarantee.
 	 *
-	 * 1. Shared family key - both players' normalized family_key (parent
-	 *    email from ETECF import, or a TD override typed into the roster
-	 *    editor - see WPMTM_Admin's players editor) are non-empty and equal.
-	 * 2. Same last name - the stored name is always uppercase LAST,FIRST
-	 *    (docs/SPEC.md; never mutated), so the last name is the substring
-	 *    before the first comma, trimmed, compared case-insensitively.
+	 * family_key is AUTHORITATIVE when both players have one (docs/SPEC.md,
+	 * "Decisions (2026-07-18, family key authoritative over last name)"):
+	 * both players' normalized family_key (parent email from ETECF import,
+	 * or a TD override typed into the roster editor - see WPMTM_Admin's
+	 * players editor) are non-empty, and the KEYS ALONE decide - equal keys
+	 * are family, different keys are NOT family, even when the two players
+	 * happen to share a last name. This lets a TD give two same-surname
+	 * players who are not actually related distinct family keys and have
+	 * that override honored, instead of the last-name rule wrongly keeping
+	 * them apart regardless.
 	 *
-	 * The last-name signal cannot be suppressed per pair - two unrelated
-	 * players who happen to share a surname are still treated as family
-	 * unless a TD gives them distinct family keys, which does not help here
-	 * (this rule only ever fires on a name match already); a TD who needs
-	 * to force such a pairing anyway just pairs it by hand, since Suggest
-	 * pairings only ever prefills the round-entry form (WPMTM_Frontend_TD::
-	 * render_suggest_link()'s docblock).
+	 * The last-name signal - the stored name is always uppercase LAST,FIRST
+	 * (docs/SPEC.md; never mutated), so the last name is the substring
+	 * before the first comma, trimmed, compared case-insensitively - is only
+	 * consulted as a FALLBACK, when at least one of the two players has no
+	 * family_key at all. It cannot be suppressed per pair in that fallback
+	 * case: two unrelated players who happen to share a surname, where one
+	 * or both have no family_key, are still treated as family; a TD who
+	 * needs to force such a pairing anyway just pairs it by hand, since
+	 * Suggest pairings only ever prefills the round-entry form
+	 * (WPMTM_Frontend_TD::render_suggest_link()'s docblock).
 	 *
 	 * @param array $a Player row with a 'name' and optional 'family_key'.
 	 * @param array $b Same shape.
 	 * @return bool
 	 */
+	/**
+	 * A family key shared by more than this many players in one section is
+	 * not a family - it is a group. See suppress_group_family_keys().
+	 */
+	const FAMILY_KEY_MAX_SHARE = 4;
+
+	/**
+	 * Blank out any family key shared by more than FAMILY_KEY_MAX_SHARE
+	 * players in the section, returning the roster otherwise untouched.
+	 *
+	 * The family key comes from the registrant's parent email, which is a
+	 * good sibling signal only while the person behind it really is one
+	 * household's parent. A school, a club, or a coach registering a squad
+	 * puts their own address on every entry, which would otherwise mark the
+	 * whole squad as one family and ask the pairing engine to avoid pairing
+	 * any of them against each other - in a scholastic section that can be
+	 * most of the field, which either wrecks the pairings or silently
+	 * degrades into the forced-family fallback on nearly every board.
+	 *
+	 * Suppressing the key restores ordinary pairing for that group. Real
+	 * siblings inside it are still caught by the last-name rule in
+	 * same_family(), and a TD who wants a specific pair kept apart can set
+	 * a distinct family key on those two players in the roster editor.
+	 *
+	 * @param array $players Roster rows, each optionally carrying 'family_key'.
+	 * @return array The same rows, with over-shared keys blanked.
+	 */
+	protected static function suppress_group_family_keys( array $players ) {
+		$counts = array();
+		foreach ( $players as $p ) {
+			$key = self::normalize_family_key( isset( $p['family_key'] ) ? $p['family_key'] : '' );
+			if ( '' === $key ) {
+				continue;
+			}
+			$counts[ $key ] = isset( $counts[ $key ] ) ? $counts[ $key ] + 1 : 1;
+		}
+
+		foreach ( $players as $i => $p ) {
+			$key = self::normalize_family_key( isset( $p['family_key'] ) ? $p['family_key'] : '' );
+			if ( '' !== $key && $counts[ $key ] > self::FAMILY_KEY_MAX_SHARE ) {
+				$players[ $i ]['family_key'] = '';
+			}
+		}
+
+		return $players;
+	}
+
 	public static function same_family( array $a, array $b ) {
 		$key_a = self::normalize_family_key( isset( $a['family_key'] ) ? $a['family_key'] : '' );
 		$key_b = self::normalize_family_key( isset( $b['family_key'] ) ? $b['family_key'] : '' );
-		if ( '' !== $key_a && '' !== $key_b && $key_a === $key_b ) {
-			return true;
+
+		if ( '' !== $key_a && '' !== $key_b ) {
+			// Both players carry a family key: it is authoritative, even
+			// when the two share a last name (see this method's docblock).
+			return $key_a === $key_b;
 		}
 
 		$last_a = self::last_name( isset( $a['name'] ) ? $a['name'] : '' );
@@ -275,7 +332,7 @@ class WPMTM_Pairing_Suggest {
 			}
 			if ( null === $bye_index ) {
 				$bye_index = count( $active ) - 1;
-				$notes[]   = 'Every remaining player has already had a bye; suggesting the lowest-ranked player again.';
+				$notes[]   = 'Every remaining player has already had a bye. Suggesting the lowest-ranked player again.';
 			}
 			$bye_player    = array_splice( $active, $bye_index, 1 );
 			$bye_player_id = (int) $bye_player[0]['id'];
@@ -314,10 +371,17 @@ class WPMTM_Pairing_Suggest {
 				$opp_index      = self::pick_opponent( $white_candidate, $bottom, $i, $tally );
 				$forced_rematch = false;
 				if ( null === $opp_index ) {
-					$opp_index      = $i; // all rematches: accept and note.
+					// All rematches: accept whichever candidate remains in
+					// $bottom. Index 0, not $i - $i is the top-half loop's
+					// ORIGINAL index (0, 1, 2...), but $bottom shrinks by one
+					// every iteration, so $i can point past the end of the
+					// current (shrunk) $bottom on any board after the first
+					// in a group (2026-07-24 crash fix: this used to throw
+					// when a forced rematch landed on board 2+ of a group).
+					$opp_index      = 0;
 					$forced_rematch = true;
 					$notes[]        = sprintf(
-						'%d. %s has already played every available opponent in the score group; a rematch is suggested.',
+						'%d. %s has already played every available opponent in the score group. A rematch is suggested.',
 						$white_candidate['pair_num'],
 						$white_candidate['name']
 					);
@@ -332,7 +396,7 @@ class WPMTM_Pairing_Suggest {
 				// already told the TD to double-check this board).
 				if ( ! $forced_rematch && self::same_family( $white_candidate, $opponent ) ) {
 					$notes[] = sprintf(
-						'%d. %s has no available non-family opponent in this score group; a family pairing (%d. %s) is suggested.',
+						'%d. %s has no available non-family opponent in this score group. A family pairing (%d. %s) is suggested.',
 						$white_candidate['pair_num'],
 						$white_candidate['name'],
 						$opponent['pair_num'],
@@ -563,7 +627,7 @@ class WPMTM_Pairing_Suggest {
 					$present = $x_active ? $x : $y;
 					$absent  = $x_active ? $y : $x;
 					$notes[] = sprintf(
-						'%d. %s has no schedule opponent this round (%d. %s is withdrawn or already entered); assign a bye or repair by hand.',
+						'%d. %s has no schedule opponent this round (%d. %s is withdrawn or already entered). Assign a bye or repair by hand.',
 						$present['pair_num'],
 						$present['name'],
 						$absent['pair_num'],
@@ -583,7 +647,7 @@ class WPMTM_Pairing_Suggest {
 		}
 
 		if ( $ghost && null === $bye_player_id && count( $active ) % 2 === 1 ) {
-			$notes[] = 'The scheduled bye player is unavailable; pick the bye by hand.';
+			$notes[] = 'The scheduled bye player is unavailable. Pick the bye by hand.';
 		}
 
 		return array(

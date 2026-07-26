@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Tournament Manager
  * Description: Club-level USCF chess tournament management: setup guide, roster import, pairing aid, round results, standings, and USCF DBF export.
- * Version: 1.0.1
+ * Version: 1.3
  * Author: Christefano Reyes
  * Plugin URI: https://github.com/christefano/wp-tournament-manager
  * Author URI: https://macchess.org
@@ -18,7 +18,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'WPMTM_VERSION', '1.0.1' );
+define( 'WPMTM_VERSION', '1.3' );
 define( 'WPMTM_PLUGIN_FILE', __FILE__ );
 define( 'WPMTM_PLUGIN_DIR', plugin_dir_path( __FILE__ ) );
 define( 'WPMTM_PLUGIN_URL', plugin_dir_url( __FILE__ ) );
@@ -37,6 +37,7 @@ require_once WPMTM_PLUGIN_DIR . 'includes/class-wpmtm-round-token.php';
 require_once WPMTM_PLUGIN_DIR . 'includes/class-wpmtm-time-control.php';
 require_once WPMTM_PLUGIN_DIR . 'includes/class-wpmtm-dbf-writer.php';
 require_once WPMTM_PLUGIN_DIR . 'includes/class-wpmtm-uscf-export.php';
+require_once WPMTM_PLUGIN_DIR . 'includes/class-wpmtm-csv-export.php';
 require_once WPMTM_PLUGIN_DIR . 'includes/class-wpmtm-uscf-validator.php';
 require_once WPMTM_PLUGIN_DIR . 'includes/class-wpmtm-scoring.php';
 require_once WPMTM_PLUGIN_DIR . 'includes/class-wpmtm-tiebreaks.php';
@@ -46,6 +47,7 @@ require_once WPMTM_PLUGIN_DIR . 'includes/class-wpmtm-round-entry.php';
 require_once WPMTM_PLUGIN_DIR . 'includes/class-wpmtm-round-selector.php';
 require_once WPMTM_PLUGIN_DIR . 'includes/class-wpmtm-export-builder.php';
 require_once WPMTM_PLUGIN_DIR . 'includes/class-wpmtm-name.php';
+require_once WPMTM_PLUGIN_DIR . 'includes/class-wpmtm-test-players.php';
 
 // WordPress layer.
 require_once WPMTM_PLUGIN_DIR . 'includes/class-wpmtm-schema.php';
@@ -60,7 +62,15 @@ require_once WPMTM_PLUGIN_DIR . 'includes/class-wpmtm-etr-import.php';
 // (unit-tested by tests/run-tests.php) plus a WordPress-layer HTTP client
 // and admin-ajax handlers.
 require_once WPMTM_PLUGIN_DIR . 'includes/class-wpmtm-uscf-status.php';
+// USCF membership + rating check at registration (docs/SPEC.md, v1.2).
+// Mostly WordPress-layer (hooks Event Tickets' attendee-meta-save action),
+// but also carries one pure static decision, checks_enabled_for()
+// (docs/SPEC.md, "Decisions (2026-07-16, unrated registration checks)"),
+// so tests/run-tests.php loads this file too.
+require_once WPMTM_PLUGIN_DIR . 'includes/class-wpmtm-registration-check.php';
 require_once WPMTM_PLUGIN_DIR . 'includes/class-wpmtm-admin.php';
+require_once WPMTM_PLUGIN_DIR . 'includes/class-wpmtm-admin-sections.php';
+require_once WPMTM_PLUGIN_DIR . 'includes/class-wpmtm-admin-players.php';
 require_once WPMTM_PLUGIN_DIR . 'includes/class-wpmtm-admin-import.php';
 require_once WPMTM_PLUGIN_DIR . 'includes/class-wpmtm-admin-export.php';
 require_once WPMTM_PLUGIN_DIR . 'includes/class-wpmtm-wizard.php';
@@ -72,11 +82,11 @@ register_activation_hook( __FILE__, array( 'WPMTM_Schema', 'activate' ) );
 
 /**
  * Boot the plugin. WPMTM_Plugin holds shared option/helper access;
- * WPMTM_Settings, WPMTM_Admin, WPMTM_Admin_Import, WPMTM_Admin_Export, and
- * WPMTM_Frontend register their own admin_menu / admin_post / front-end
- * hooks and are safe to instantiate unconditionally - each degrades on its
- * own if the current user lacks the capability (WPMTM_Frontend simply omits
- * the TD panel).
+ * WPMTM_Settings, WPMTM_Admin, WPMTM_Admin_Sections, WPMTM_Admin_Players,
+ * WPMTM_Admin_Import, WPMTM_Admin_Export, and WPMTM_Frontend register their
+ * own admin_menu / admin_post / front-end hooks and are safe to instantiate
+ * unconditionally - each degrades on its own if the current user lacks the
+ * capability (WPMTM_Frontend simply omits the TD panel).
  *
  * WPMTM_Schema::maybe_upgrade() runs here too (not just on activation) so
  * existing installs pick up schema changes (e.g. wpmtm_sections.rated) on
@@ -87,9 +97,17 @@ add_action( 'plugins_loaded', function () {
 	WPMTM_Plugin::instance();
 	WPMTM_Settings::instance();
 	WPMTM_Admin::instance();
+	WPMTM_Admin_Sections::instance();
+	WPMTM_Admin_Players::instance();
 	WPMTM_Admin_Import::instance();
 	WPMTM_Admin_Export::instance();
 	WPMTM_Wizard::instance();
 	WPMTM_USCF_Status::instance();
+	WPMTM_Registration_Check::instance();
 	WPMTM_Frontend::instance();
 } );
+
+if ( defined( 'WP_CLI' ) && WP_CLI ) {
+	require_once WPMTM_PLUGIN_DIR . 'includes/class-wpmtm-cli.php';
+	WP_CLI::add_command( 'wpmtm validate', 'WPMTM_CLI' );
+}

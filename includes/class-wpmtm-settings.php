@@ -61,10 +61,10 @@ class WPMTM_Settings {
 		}
 
 		// The Tournament Manager role decision (WPMTM_Roles) is a separate
-		// option, not part of WPMTM_Plugin::OPTION_KEY: it is also written
-		// outside this settings form, by WPMTM_Wizard's "access" step, and
-		// keeping it out of the options array means neither writer has to
-		// know about the other's sanitize/merge logic.
+		// option, not part of WPMTM_Plugin::OPTION_KEY, kept out of the
+		// options array so its own sanitize/merge logic (which creates or
+		// removes the role as a side effect) stays independent of the rest
+		// of this form.
 		register_setting(
 			self::OPTION_GROUP,
 			'wpmtm_role_decision',
@@ -95,29 +95,35 @@ class WPMTM_Settings {
 		);
 		add_settings_field(
 			// Option key 'chief_td_id' and this method name are unchanged -
-			// only the label the TD sees is renamed Chief TD (docs/SPEC.md,
-			// "Decisions (2026-07-11, per-tournament TD overrides and Chief
-			// TD rename)"); renaming the option key would break every
-			// existing site's stored settings for no user-visible benefit.
+			// only the label the TD sees changes (docs/SPEC.md, "Decisions
+			// (2026-07-11, per-tournament TD overrides and Chief TD
+			// rename)", updated 2026-07-17 "TD default removal"); renaming
+			// the option key would break every existing site's stored
+			// settings for no user-visible benefit. As of 2026-07-17 this
+			// value is a DEFAULT only: it is never applied automatically,
+			// only copied onto a tournament by that tournament's "Use
+			// default" button.
 			'chief_td_id',
-			__( 'Chief TD USCF ID', 'wp-tournament-manager' ),
+			__( 'Default Chief TD ID', 'wp-tournament-manager' ),
 			array( $this, 'field_chief_td_id' ),
 			self::PAGE_SLUG,
 			'wpmtm_main'
 		);
 		add_settings_field(
 			'assistant_td_id',
-			__( 'Assistant TD USCF ID', 'wp-tournament-manager' ),
+			__( 'Default Assistant TD ID', 'wp-tournament-manager' ),
 			array( $this, 'field_assistant_td_id' ),
 			self::PAGE_SLUG,
 			'wpmtm_main'
 		);
 		add_settings_field(
-			// Not a stored option: renders the "Validate TDs" button
-			// (docs/SPEC.md, 2026-07-14, USCF status validation) directly
-			// under the three ID fields above, so the on-demand USCF check
-			// sits next to the values it checks. sanitize_options() never
-			// sees it (type="button", no name attribute, nothing posted).
+			// Not a stored option: renders the "Validate with USCF" button
+			// (docs/SPEC.md, 2026-07-14, USCF status validation; renamed
+			// from "Validate TDs" 2026-07-18 - it also checks the club
+			// affiliate, not just the TDs) directly under the three ID
+			// fields above, so the on-demand USCF check sits next to the
+			// values it checks. sanitize_options() never sees it
+			// (type="button", no name attribute, nothing posted).
 			'validate_tds',
 			__( 'USCF status', 'wp-tournament-manager' ),
 			array( $this, 'field_validate_tds' ),
@@ -159,6 +165,18 @@ class WPMTM_Settings {
 			self::PAGE_SLUG,
 			'wpmtm_main'
 		);
+		add_settings_field(
+			// Option key 'verify_ratings' is unchanged - only its MEANING
+			// widens here (docs/SPEC.md, "Decisions (2026-07-18, master
+			// automatic-checking toggle)"): it now gates BOTH the automatic
+			// membership check and the rating overwrite at registration,
+			// not the rating overwrite alone. Default ON, same as before.
+			'verify_ratings',
+			__( 'Automatically check registrant memberships and ratings with USCF', 'wp-tournament-manager' ),
+			array( $this, 'field_verify_ratings' ),
+			self::PAGE_SLUG,
+			'wpmtm_main'
+		);
 
 		add_settings_section(
 			'wpmtm_access',
@@ -191,6 +209,8 @@ class WPMTM_Settings {
 			esc_attr( $opts['affiliate_id'] )
 		);
 		echo '<p class="description">' . esc_html__( 'The letter A followed by 7 digits, or leave blank. Only required to export RATED tournaments.', 'wp-tournament-manager' ) . '</p>';
+		echo '<p class="description">' . esc_html__( 'To submit a rated tournament on behalf of an affiliate other than your own, the directing TD must be an authorized tournament director of that affiliate. That affiliate\'s Affiliate Manager can add a TD as one of its authorized TDs.', 'wp-tournament-manager' ) . '</p>';
+		echo '<p class="description">' . esc_html__( 'The submitting TD is responsible for the tournament\'s validity and payment of the USCF tournament fee. The lead TD, if different from the submitting TD, is also responsible for the tournament being valid. If the submitter is not the directing TD, do not list the submitter as a TD on the tournament.', 'wp-tournament-manager' ) . '</p>';
 	}
 
 	public function field_chief_td_id() {
@@ -200,7 +220,7 @@ class WPMTM_Settings {
 			esc_attr( WPMTM_Plugin::OPTION_KEY ),
 			esc_attr( $opts['chief_td_id'] )
 		);
-		echo '<p class="description">' . esc_html__( '8-digit USCF member ID, or leave blank. Only required to export RATED tournaments.', 'wp-tournament-manager' ) . '</p>';
+		echo '<p class="description">' . esc_html__( '8-digit USCF member ID, or leave blank. A starting value only: it is never applied to a tournament automatically. Each tournament\'s edit page has its own Chief TD ID field with a "Use default" button that copies this value in, one click at a time.', 'wp-tournament-manager' ) . '</p>';
 	}
 
 	public function field_assistant_td_id() {
@@ -210,24 +230,26 @@ class WPMTM_Settings {
 			esc_attr( WPMTM_Plugin::OPTION_KEY ),
 			esc_attr( $opts['assistant_td_id'] )
 		);
-		echo '<p class="description">' . esc_html__( '8-digit USCF member ID, or leave blank.', 'wp-tournament-manager' ) . '</p>';
+		echo '<p class="description">' . esc_html__( '8-digit USCF member ID, or leave blank. A starting value only: it is never applied to a tournament automatically. Each tournament\'s edit page has its own Assistant TD ID field with a "Use default" button that copies this value in, one click at a time.', 'wp-tournament-manager' ) . '</p>';
 	}
 
 	/**
-	 * The "Validate TDs" button (docs/SPEC.md, 2026-07-14, USCF status
-	 * validation): checks the saved affiliate ID, Chief TD, and Assistant
-	 * TD (when set) against the USCF ratings API via admin-ajax
-	 * (WPMTM_USCF_Status::ajax_validate_tds(), settings context,
-	 * through-date today); assets/wpmtm-admin.js renders the result rows
-	 * into the container below the button.
+	 * The "Validate with USCF" button (docs/SPEC.md, 2026-07-14, USCF
+	 * status validation; renamed from "Validate TDs" 2026-07-18 since it
+	 * checks the club affiliate too, not just the TDs): checks the saved
+	 * affiliate ID, Chief TD, and Assistant TD (when set) against the
+	 * USCF ratings API via admin-ajax (WPMTM_USCF_Status::ajax_validate_tds(),
+	 * settings context, through-date today); assets/wpmtm-admin.js renders
+	 * the result rows into the container below the button and swaps its
+	 * text to "Validating with USCF..." while the request is in flight.
 	 */
 	public function field_validate_tds() {
 		printf(
 			'<button type="button" class="button" data-wpmtm-validate-tds data-context="settings" data-nonce="%1$s">%2$s</button>',
 			esc_attr( wp_create_nonce( 'wpmtm_validate_tds' ) ),
-			esc_html__( 'Validate TDs', 'wp-tournament-manager' )
+			esc_html__( 'Validate with USCF', 'wp-tournament-manager' )
 		);
-		echo '<p class="description">' . esc_html__( 'Checks the saved affiliate ID, Chief TD, and Assistant TD (when set) against the USCF ratings API: membership, TD certification, and Safe Play, as active through today. Advisory only - nothing is blocked by the result. Save your changes first if you edited the IDs above.', 'wp-tournament-manager' ) . '</p>';
+		echo '<p class="description">' . esc_html__( 'Checks the saved affiliate ID, Chief TD, and Assistant TD (when set) against the USCF ratings API: club affiliate status, membership, TD certification, and Safe Play, as active through today. Nothing is blocked by the result. Save changes first if the IDs above have been edited.', 'wp-tournament-manager' ) . '</p>';
 		echo '<div data-wpmtm-validate-tds-results></div>';
 	}
 
@@ -238,7 +260,7 @@ class WPMTM_Settings {
 			esc_attr( WPMTM_Plugin::OPTION_KEY ),
 			esc_attr( $opts['default_city'] )
 		);
-		echo '<p class="description">' . esc_html__( 'Used as the placeholder default when adding a new tournament; capped at 21 characters, the USCF export format\'s limit for the event city (H_CITY).', 'wp-tournament-manager' ) . '</p>';
+		echo '<p class="description">' . esc_html__( 'Used as the placeholder default when adding a new tournament. Capped at 21 characters, the USCF export format\'s limit for the event city (H_CITY).', 'wp-tournament-manager' ) . '</p>';
 	}
 
 	public function field_default_state() {
@@ -280,6 +302,30 @@ class WPMTM_Settings {
 		echo '<p class="description">' . esc_html__( 'Off by default so club history survives an accidental uninstall. Plugin options are always removed on uninstall regardless of this setting.', 'wp-tournament-manager' ) . '</p>';
 	}
 
+	/**
+	 * Master automatic-checking toggle (docs/SPEC.md, "Decisions
+	 * (2026-07-18, master automatic-checking toggle)"; option key
+	 * 'verify_ratings' unchanged, meaning widened): when on,
+	 * WPMTM_Registration_Check does its usual automatic work at
+	 * registration - the USCF membership check (registrant-facing warning,
+	 * nothing saved) AND the rating overwrite. When off, it does NEITHER;
+	 * WPMTM_Registration_Check::checks_enabled_for() is the single pure
+	 * gate both paths share, so there is no way for one to run without the
+	 * other. Default on. The manual "Validate players" and "Validate with
+	 * USCF" buttons are unaffected either way - they always call the API
+	 * on demand, which is the fallback this toggle exists to preserve.
+	 */
+	public function field_verify_ratings() {
+		$opts = $this->opts();
+		printf(
+			'<label><input type="checkbox" name="%1$s[verify_ratings]" value="1" %2$s> %3$s</label>',
+			esc_attr( WPMTM_Plugin::OPTION_KEY ),
+			checked( ! empty( $opts['verify_ratings'] ), true, false ),
+			esc_html__( 'Check registrant memberships and verify ratings against USCF automatically at registration.', 'wp-tournament-manager' )
+		);
+		echo '<p class="description">' . esc_html__( 'When enabled, a registrant who enters a USCF ID and whose membership is not active through the event\'s last day sees a heads-up on the order confirmation page, but nothing is blocked. Their self-entered rating is replaced with their official USCF rating (Regular preferred, Quick as a fallback). A rating is only replaced when the USCF API actually returns one. These automatic checks use the USCF MUIR API v1, which USCF does not officially support and which may stop working if it is replaced by the MUIR API v2 currently in development. Disable this setting if it misbehaves. The manual "Validate players" button on an event\'s Registrations tab and "Validate with USCF" buttons are unaffected by this setting and always check on demand.', 'wp-tournament-manager' ) . '</p>';
+	}
+
 	public function field_role_decision() {
 		$decision = get_option( 'wpmtm_role_decision', '' );
 		printf(
@@ -287,7 +333,7 @@ class WPMTM_Settings {
 			checked( 'role' === $decision, true, false ),
 			esc_html__( 'Provide a dedicated Tournament Manager role', 'wp-tournament-manager' )
 		);
-		echo '<p class="description">' . esc_html__( 'Administrators always keep access regardless of this setting. Checking this creates a "Tournament Manager" role your club can assign to a volunteer TD so they can manage tournaments without being a full site administrator.', 'wp-tournament-manager' ) . '</p>';
+		echo '<p class="description">' . esc_html__( 'Administrators always keep access regardless of this setting. Checking this creates a "Tournament Manager" role that can be assigned to a volunteer TD so they can manage tournaments without being a full site administrator.', 'wp-tournament-manager' ) . '</p>';
 	}
 
 	// -----------------------------------------------------------------
@@ -339,6 +385,8 @@ class WPMTM_Settings {
 
 		$out['delete_data_on_uninstall'] = ! empty( $input['delete_data_on_uninstall'] ) ? 1 : 0;
 
+		$out['verify_ratings'] = ! empty( $input['verify_ratings'] ) ? 1 : 0;
+
 		WPMTM_Plugin::instance()->invalidate_opts_cache();
 
 		return $out;
@@ -348,8 +396,9 @@ class WPMTM_Settings {
 	 * Sanitize callback for the separate 'wpmtm_role_decision' option
 	 * (registered above, not part of WPMTM_Plugin::OPTION_KEY). Toggling the
 	 * checkbox on the Settings page creates or removes the
-	 * 'wpmtm_tournament_manager' role (WPMTM_Roles) to match, the same
-	 * create/remove pair the wizard's "access" step calls.
+	 * 'wpmtm_tournament_manager' role (WPMTM_Roles) to match - this is the
+	 * role decision's only path (docs/SPEC.md, "Design (2026-07-16, setup
+	 * guide redesign)").
 	 *
 	 * @param mixed $input Raw posted checkbox value, or null when unchecked
 	 *                      (unchecked boxes are omitted from the POST body).
@@ -382,11 +431,15 @@ class WPMTM_Settings {
 		}
 		?>
 		<div class="wrap">
-			<h1><?php esc_html_e( 'Tournament Manager Settings', 'wp-tournament-manager' ); ?></h1>
+			<h1 class="wp-heading-inline"><?php esc_html_e( 'Tournament Manager Settings', 'wp-tournament-manager' ); ?></h1>
+			<?php // 2026-07-21 (setup guide button position consistency): moved here, right after the H1, matching every other TM admin page - previously this rendered lower, wrapped in its own <p>, after the description and the guide-shown notice. ?>
+			<?php WPMTM_Wizard::instance()->render_show_guide_button( 'page-title-action' ); ?>
+			<hr class="wp-header-end">
 			<?php $this->render_admin_header(); ?>
 			<p class="description">
 				<?php esc_html_e( 'Affiliate and TD IDs are only required to export DBF files for RATED tournaments. Unrated club nights need none of this.', 'wp-tournament-manager' ); ?>
 			</p>
+			<?php WPMTM_Wizard::instance()->render_guide_shown_notice(); ?>
 			<?php settings_errors( WPMTM_Plugin::OPTION_KEY ); ?>
 			<form method="post" action="options.php">
 				<?php

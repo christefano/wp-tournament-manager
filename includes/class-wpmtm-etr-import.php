@@ -21,6 +21,27 @@ class WPMTM_ETR_Import {
 	/** Expected header cells, in order (case-insensitive, trimmed match). */
 	const EXPECTED_HEADERS = array( 'Last Name', 'First Name', 'USCF ID', 'Rating', 'Section', 'Status' );
 
+	/**
+	 * ETECF attendee meta key for the registrant's free-text "Additional
+	 * information" note (docs/SPEC.md, "Decisions (2026-07-17, import the
+	 * registrant note)"). Unlike uscf_id_field/rating_field, wp-etr has no
+	 * configurable option mapping to this field - its get_opts() only
+	 * covers section/name/USCF-id/rating - so there is nothing to resolve
+	 * live; this is the literal key, read directly off the attendee post
+	 * the same way wp-etr's own build_sections() reads the (also
+	 * unconfigurable) 'etecf_parent_email' key.
+	 */
+	const NOTES_FIELD = 'etecf_additional_information';
+
+	/**
+	 * Defensive cap on wpmtm_players.notes (docs/SPEC.md, "Decisions
+	 * (2026-07-17, import the registrant note)"). The DB column is TEXT
+	 * (no MySQL-enforced width), but a registrant free-text box has no
+	 * reason to run this long; this only guards against abuse, not normal
+	 * use.
+	 */
+	const NOTES_MAX_LENGTH = 2000;
+
 	// -----------------------------------------------------------------
 	// Pure parse layer.
 	// -----------------------------------------------------------------
@@ -60,13 +81,13 @@ class WPMTM_ETR_Import {
 		// inside quotes are handled correctly (and both CRLF and bare-LF line
 		// endings work, since fgetcsv reads up to the next unquoted newline
 		// regardless of style).
-		$stream = fopen( 'php://temp', 'r+b' );
-		fwrite( $stream, $csv_text );
+		$stream = fopen( 'php://temp', 'r+b' ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fopen -- in-memory php://temp stream, not a filesystem call; WP_Filesystem has no stream API and cannot back fgetcsv()'s quote/escape parsing.
+		fwrite( $stream, $csv_text ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fwrite -- writing into the in-memory php://temp stream above, not to disk.
 		rewind( $stream );
 
 		$header = fgetcsv( $stream, 0, ',', '"', '' );
 		if ( false === $header || null === $header ) {
-			fclose( $stream );
+			fclose( $stream ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fclose -- closing the in-memory php://temp stream opened above, not a filesystem call.
 			return array(
 				'error'   => 'empty_file',
 				'message' => 'The uploaded file is empty.',
@@ -77,7 +98,7 @@ class WPMTM_ETR_Import {
 		$expected_normalized = array_map( array( __CLASS__, 'normalize_header_cell' ), self::EXPECTED_HEADERS );
 
 		if ( $normalized_header !== $expected_normalized ) {
-			fclose( $stream );
+			fclose( $stream ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fclose -- closing the in-memory php://temp stream, not a filesystem call.
 			return array(
 				'error'   => 'bad_header',
 				'message' => 'The header row does not match the expected ETR Pairing export columns.',
@@ -92,7 +113,7 @@ class WPMTM_ETR_Import {
 			$raw_rows[] = $fields;
 		}
 
-		fclose( $stream );
+		fclose( $stream ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fclose -- closing the in-memory php://temp stream, not a filesystem call.
 
 		return self::normalize_rows( $raw_rows );
 	}
@@ -133,7 +154,40 @@ class WPMTM_ETR_Import {
 	 *                        unchanged for SwissSys/WinTD compatibility - the
 	 *                        last-name family-avoidance signal still applies
 	 *                        to a CSV-imported roster even with no family_key
-	 *                        at all).
+	 *                        at all). An optional 9th element - rating_source
+	 *                        (docs/SPEC.md, "Decisions (2026-07-17, rating
+	 *                        provenance)"), the literal string 'official' or
+	 *                        '' for none - and a 10th - rating_checked, a
+	 *                        current_time('timestamp')-style unix integer as
+	 *                        a numeric string, or '' for none - are carried
+	 *                        through the same way into 'rating_source' /
+	 *                        'rating_checked', both normalizing to null.
+	 *                        Also only ever supplied by
+	 *                        build_rows_from_event() (read straight off the
+	 *                        attendee's own _wpmtm_rating_source /
+	 *                        _wpmtm_rating_checked meta, the same meta
+	 *                        WPMTM_Registration_Check writes); a CSV import
+	 *                        carries neither, same reasoning as photo_id and
+	 *                        family_key above.
+	 *                        An optional 11th element - notes (docs/SPEC.md,
+	 *                        "Decisions (2026-07-17, import the registrant
+	 *                        note)"), the registrant's free-text ETECF
+	 *                        "Additional information" note, already
+	 *                        sanitize_textarea_field()'d by the WP layer
+	 *                        (build_rows_from_event(), same reasoning as
+	 *                        family_key's sanitize_email() above - a WP
+	 *                        function, so it cannot run in this pure
+	 *                        method) - is trimmed and defensively capped to
+	 *                        NOTES_MAX_LENGTH here (pure, unit-tested), then
+	 *                        carried through into the 'notes' key,
+	 *                        normalizing '' to null the same way family_key
+	 *                        does. This is the lightweight alternative to a
+	 *                        structured byes-by-round field: a bye request
+	 *                        typed into this box rides along as plain text
+	 *                        for the TD to read, not parsed or acted on.
+	 *                        Only build_rows_from_event() ever supplies it;
+	 *                        a CSV import always normalizes to null, since
+	 *                        the pairing-export CSV has no notes column.
 	 * @return array array( 'rows' => ..., 'sections' => ..., 'warnings' => ... )
 	 *               - same success shape parse() returns.
 	 */
@@ -148,7 +202,7 @@ class WPMTM_ETR_Import {
 				continue;
 			}
 
-			$fields = array_pad( array_values( $fields ), 8, '' );
+			$fields = array_pad( array_values( $fields ), 11, '' );
 
 			$last_name  = trim( (string) $fields[0] );
 			$first_name = trim( (string) $fields[1] );
@@ -173,6 +227,25 @@ class WPMTM_ETR_Import {
 			// file) normalizes to null the same way photo_id 0 does above.
 			$family_key = '' !== trim( (string) $fields[7] ) ? trim( (string) $fields[7] ) : null;
 
+			// Optional 9th/10th elements: rating_source / rating_checked
+			// (docs/SPEC.md, "Decisions (2026-07-17, rating provenance)"),
+			// carried through only by the wp-etr one-click import path, same
+			// as photo_id/family_key above - a CSV import always normalizes
+			// both to null.
+			$rating_source  = 'official' === trim( (string) $fields[8] ) ? 'official' : null;
+			$rating_checked = is_numeric( $fields[9] ) && (int) $fields[9] > 0 ? (int) $fields[9] : null;
+
+			// Optional 11th element: notes (docs/SPEC.md, "Decisions
+			// (2026-07-17, import the registrant note)"). Already
+			// sanitize_textarea_field()'d by the WP layer when present -
+			// see this method's own docblock; mb_substr() (not substr(),
+			// same reasoning as the tournament-name cap in
+			// WPMTM_Admin::handle_save_tournament()) so a multi-byte
+			// character is never split mid-character at the cap. '' (the
+			// permanent CSV-path state) normalizes to null the same way
+			// family_key does.
+			$notes = mb_substr( trim( (string) $fields[10] ), 0, self::NOTES_MAX_LENGTH );
+
 			if ( '' === $last_name && '' === $first_name ) {
 				continue; // fully blank data row.
 			}
@@ -180,16 +253,24 @@ class WPMTM_ETR_Import {
 			$row_warnings = array();
 			$player_label = trim( $last_name . ' ' . $first_name );
 
-			// mem_id: strip everything but digits; a non-empty raw value that
-			// yields no digits at all (e.g. "Need New ID") becomes a blank ID
-			// with a warning naming the player, rather than silently vanishing.
-			$mem_id = preg_replace( '/\D+/', '', $mem_id_raw );
+			// mem_id: a bare digit ID or a pasted USCF profile URL
+			// (WPMTM_USCF_Status::normalize_member_id_input() - the same
+			// normalizer the registration check and the "Validate players"
+			// path use, docs/SPEC.md "Decisions (2026-07-16, URL-form USCF
+			// IDs)"), so a roster CSV/one-click import agrees with both
+			// regardless of door. A non-empty raw value that resolves to
+			// nothing (e.g. "Need New ID", or free text that is not a
+			// recognized ID/URL) becomes a blank ID with a warning naming
+			// the player, rather than silently vanishing. Unlike the old
+			// "strip everything but digits" approach, a raw value is never
+			// scraped for stray digits out of arbitrary text.
+			$mem_id = WPMTM_USCF_Status::normalize_member_id_input( $mem_id_raw );
 			if ( '' !== $mem_id_raw && '' === $mem_id ) {
-				$msg             = sprintf( '%s: USCF ID "%s" is not a number; imported with a blank ID.', $player_label, $mem_id_raw );
+				$msg             = sprintf( '%s: USCF ID "%s" is not a number. Imported with a blank ID.', $player_label, $mem_id_raw );
 				$row_warnings[]  = $msg;
 				$file_warnings[] = $msg;
 			}
-			$mem_id = substr( $mem_id, 0, 8 );
+			$mem_id = substr( $mem_id, 0, 8 ); // wpmtm_players.mem_id is varchar(8).
 
 			// rating: digits only, cap 4; blank stays blank.
 			$rating = substr( preg_replace( '/\D+/', '', $rating_raw ), 0, 4 );
@@ -202,7 +283,7 @@ class WPMTM_ETR_Import {
 				if ( 0 === strcasecmp( $status, 'no-show' ) ) {
 					$skip = true;
 				} else {
-					$msg             = sprintf( '%s: unrecognized status "%s"; row was still imported.', $player_label, $status );
+					$msg             = sprintf( '%s: unrecognized status "%s". Row was still imported.', $player_label, $status );
 					$row_warnings[]  = $msg;
 					$file_warnings[] = $msg;
 				}
@@ -233,17 +314,20 @@ class WPMTM_ETR_Import {
 			}
 
 			$rows[] = array(
-				'last_name'  => $last_name,
-				'first_name' => $first_name,
-				'mem_id'     => $mem_id,
-				'rating'     => $rating,
-				'section'    => $section,
-				'status'     => $status,
-				'name'       => $name,
-				'skip'       => $skip,
-				'warnings'   => $row_warnings,
-				'photo_id'   => $photo_id,
-				'family_key' => $family_key,
+				'last_name'      => $last_name,
+				'first_name'     => $first_name,
+				'mem_id'         => $mem_id,
+				'rating'         => $rating,
+				'section'        => $section,
+				'status'         => $status,
+				'name'           => $name,
+				'skip'           => $skip,
+				'warnings'       => $row_warnings,
+				'photo_id'       => $photo_id,
+				'family_key'     => $family_key,
+				'rating_source'  => $rating_source,
+				'rating_checked' => $rating_checked,
+				'notes'          => '' !== $notes ? $notes : null,
 			);
 		}
 
@@ -356,7 +440,7 @@ class WPMTM_ETR_Import {
 					'suffix'   => 'Swiss',
 					'trn_type' => 'S',
 					'players'  => $players,
-					'warning'  => 'Fewer than 4 players; created as a single Swiss section instead of quads.',
+					'warning'  => 'Fewer than 4 players. Created as a single Swiss section instead of quads.',
 				),
 			);
 		}
@@ -509,7 +593,7 @@ class WPMTM_ETR_Import {
 				$section    = $section_id ? WPMTM_Repository::get_section( $section_id ) : null;
 				$owned      = $section && (int) $section->tournament_id === $tournament_id;
 				if ( ! $owned ) {
-					$summary['warnings'][] = sprintf( 'Section "%s" was mapped to an existing section that could not be found; its rows were skipped.', $csv_section_name );
+					$summary['warnings'][] = sprintf( 'Section "%s" was mapped to an existing section that could not be found. Its rows were skipped.', $csv_section_name );
 					$summary['players_skipped'] += count( $rows );
 					continue;
 				}
@@ -521,7 +605,7 @@ class WPMTM_ETR_Import {
 
 			$existing_max = $this->max_pair_num( $section_id );
 			if ( $existing_max > 0 ) {
-				$summary['warnings'][] = sprintf( 'Section "%s" already had players; the imported roster was appended after existing pairing number %d.', $csv_section_name, $existing_max );
+				$summary['warnings'][] = sprintf( 'Section "%s" already had players. The imported roster was appended after existing pairing number %d.', $csv_section_name, $existing_max );
 			}
 
 			$imported_here = $this->insert_players( $section_id, $ordered, $existing_max + 1 );
@@ -585,19 +669,30 @@ class WPMTM_ETR_Import {
 	 * supply sec_name, trn_type, tot_rnds, rated; sec_num is assigned here
 	 * via WPMTM_Repository::next_sec_num() and everything else uses the
 	 * same defaults the plain (non-quad) create path always used.
+	 *
+	 * timectl seeds from the club's first Settings preset (WPMTM_Plugin::
+	 * get_timectl_presets()) rather than blank, since an imported section
+	 * has no TD-filled form to source it from and USCF export/validation
+	 * both need a parseable time control; r_system is derived from that
+	 * same value so the two stay consistent.
 	 */
 	protected function create_section( $tournament_id, array $fields ) {
 		global $wpdb;
 		$sections_table = WPMTM_Schema::table( 'sections' );
 
-		$wpdb->insert(
+		$presets  = WPMTM_Plugin::instance()->get_timectl_presets();
+		$timectl  = isset( $presets[0] ) ? $presets[0] : '';
+		$r_system = WPMTM_Plugin::derive_r_system( $timectl );
+		$r_system = $r_system ? $r_system : 'R';
+
+		$wpdb->insert( // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery -- custom wpmtm_sections table, no core API; $wpdb->insert() escapes values internally.
 			$sections_table,
 			array(
 				'tournament_id' => $tournament_id,
 				'sec_num'       => WPMTM_Repository::next_sec_num( $tournament_id ),
 				'sec_name'      => $fields['sec_name'],
-				'r_system'      => 'R',
-				'timectl'       => '',
+				'r_system'      => $r_system,
+				'timectl'       => $timectl,
 				'trn_type'      => $fields['trn_type'],
 				'tot_rnds'      => $fields['tot_rnds'],
 				'gr_prix'       => 'N',
@@ -614,6 +709,7 @@ class WPMTM_ETR_Import {
 	protected function max_pair_num( $section_id ) {
 		global $wpdb;
 		$players_table = WPMTM_Schema::table( 'players' );
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching,PluginCheck.Security.DirectDB.UnescapedDBParameter,WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- custom wpmtm_players table, no core API; $players_table is WPMTM_Schema::table()'s trusted internal constant (not user input), and section_id is passed through $wpdb->prepare().
 		return (int) $wpdb->get_var( $wpdb->prepare( "SELECT MAX(pair_num) FROM {$players_table} WHERE section_id = %d", $section_id ) );
 	}
 
@@ -626,7 +722,19 @@ class WPMTM_ETR_Import {
 	 * (string|null, docs/SPEC.md 2026-07-14) is written the same way to
 	 * wpmtm_players.family_key - null for every CSV import (the CSV format
 	 * carries no parent-email column) and for any wp-etr row whose
-	 * registrant has no parent email on file.
+	 * registrant has no parent email on file. $row['rating_source'] /
+	 * $row['rating_checked'] (docs/SPEC.md, "Decisions (2026-07-17, rating
+	 * provenance)") carry through the same way into
+	 * wpmtm_players.rating_source / rating_checked - null unless the wp-etr
+	 * one-click import path found WPMTM_Registration_Check's own provenance
+	 * meta already on the attendee. $row['notes'] (string|null, docs/SPEC.md,
+	 * "Decisions (2026-07-17, import the registrant note)") carries the
+	 * same way into wpmtm_players.notes - null for every CSV import and for
+	 * any wp-etr row whose registrant left no "Additional information"
+	 * text. sanitize_textarea_field() runs again here, right before the
+	 * write, as this method's own defense-in-depth layer (WP-coupled, only
+	 * live-verified, not unit-tested - see normalize_rows()'s docblock for
+	 * the pure trim/cap step that already ran on this value).
 	 */
 	protected function insert_players( $section_id, array $ordered, $start_pair_num ) {
 		global $wpdb;
@@ -635,19 +743,29 @@ class WPMTM_ETR_Import {
 		$pair_num = (int) $start_pair_num;
 		$inserted = 0;
 		foreach ( $ordered as $row ) {
-			$wpdb->insert(
+			// sanitize_textarea_field() - see this method's own docblock.
+			// Strips tags/normalizes whitespace on top of normalize_rows()'s
+			// pure trim/cap; the real XSS defense is still esc_html()/
+			// esc_textarea() at every render site (roster editor, byes
+			// area), not this input-side pass.
+			$notes = ! empty( $row['notes'] ) ? sanitize_textarea_field( $row['notes'] ) : null;
+
+			$wpdb->insert( // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery -- custom wpmtm_players table, no core API; $wpdb->insert() escapes values internally.
 				$players_table,
 				array(
-					'section_id' => $section_id,
-					'pair_num'   => $pair_num,
-					'mem_id'     => '' !== $row['mem_id'] ? $row['mem_id'] : null,
-					'name'       => $row['name'],
-					'state'      => null,
-					'rating'     => '' !== $row['rating'] ? $row['rating'] : null,
-					'photo_id'   => ! empty( $row['photo_id'] ) ? (int) $row['photo_id'] : null,
-					'family_key' => ! empty( $row['family_key'] ) ? $row['family_key'] : null,
+					'section_id'     => $section_id,
+					'pair_num'       => $pair_num,
+					'mem_id'         => '' !== $row['mem_id'] ? $row['mem_id'] : null,
+					'name'           => $row['name'],
+					'state'          => null,
+					'rating'         => '' !== $row['rating'] ? $row['rating'] : null,
+					'photo_id'       => ! empty( $row['photo_id'] ) ? (int) $row['photo_id'] : null,
+					'family_key'     => ! empty( $row['family_key'] ) ? $row['family_key'] : null,
+					'rating_source'  => ! empty( $row['rating_source'] ) ? $row['rating_source'] : null,
+					'rating_checked' => ! empty( $row['rating_checked'] ) ? (int) $row['rating_checked'] : null,
+					'notes'          => $notes,
 				),
-				array( '%d', '%d', '%s', '%s', '%s', '%s', '%d', '%s' )
+				array( '%d', '%d', '%s', '%s', '%s', '%s', '%d', '%s', '%s', '%d', '%s' )
 			);
 			$pair_num++;
 			$inserted++;

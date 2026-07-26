@@ -23,6 +23,12 @@ class WPMTM_Plugin {
 		'default_zipcode'           => '',
 		'timectl_presets'           => "G/30;d0\nG/25;+5",
 		'delete_data_on_uninstall'  => 0,
+		// docs/SPEC.md, "Design (2026-07-15, v1.2 USCF status at
+		// registration, export, and CLI)": default ON (owner decision
+		// 2026-07-15). Turned off, checkout skips the rating overwrite
+		// entirely; the membership warn-only check still runs regardless
+		// of this setting (always on when TM is active).
+		'verify_ratings'            => true,
 	);
 
 	private $opts_cache = null;

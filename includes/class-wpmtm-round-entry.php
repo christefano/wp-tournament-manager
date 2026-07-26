@@ -47,7 +47,7 @@ class WPMTM_Round_Entry {
 		if ( empty( $boards ) && empty( $byes ) ) {
 			return array(
 				'ok'     => false,
-				'errors' => array( 'This round has no boards and no byes; enter at least one result or bye before saving.' ),
+				'errors' => array( 'This round has no boards and no byes. Enter at least one result or bye before saving.' ),
 			);
 		}
 

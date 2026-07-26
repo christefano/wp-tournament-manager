@@ -45,10 +45,16 @@ class WPMTM_DBF_Writer {
 		$this->fields = $fields;
 
 		if ( null === $update_date ) {
+			// Last-resort fallback only: this class is pure (no WordPress
+			// dependency, unit-tested by tests/run-tests.php) and must stay
+			// that way, so it cannot call current_time()/wp_date(). The
+			// WordPress layer (WPMTM_Admin_Export::build_report()) always
+			// passes an explicit update_date built from current_time() so
+			// the DBF carries the club's local date rather than UTC.
 			$update_date = array(
-				'year'  => (int) date( 'Y' ),
-				'month' => (int) date( 'n' ),
-				'day'   => (int) date( 'j' ),
+				'year'  => (int) date( 'Y' ), // phpcs:ignore WordPress.DateTime.RestrictedFunctions.date_date -- pure class, no WP dependency allowed; real callers always pass update_date explicitly (see above).
+				'month' => (int) date( 'n' ), // phpcs:ignore WordPress.DateTime.RestrictedFunctions.date_date -- pure class, no WP dependency allowed; real callers always pass update_date explicitly (see above).
+				'day'   => (int) date( 'j' ), // phpcs:ignore WordPress.DateTime.RestrictedFunctions.date_date -- pure class, no WP dependency allowed; real callers always pass update_date explicitly (see above).
 			);
 		}
 		$this->set_update_date( $update_date['year'], $update_date['month'], $update_date['day'] );
@@ -69,13 +75,13 @@ class WPMTM_DBF_Writer {
 		$day   = (int) $day;
 
 		if ( $year < 1900 || $year > 2155 ) {
-			throw new InvalidArgumentException( 'update date year out of dBASE III range (1900-2155): ' . $year );
+			throw new InvalidArgumentException( 'update date year out of dBASE III range (1900-2155): ' . $year ); // phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- pure class; caught by WPMTM_Admin_Export's try/catch, message is discarded, never echoed.
 		}
 		if ( $month < 1 || $month > 12 ) {
-			throw new InvalidArgumentException( 'update date month out of range: ' . $month );
+			throw new InvalidArgumentException( 'update date month out of range: ' . $month ); // phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- caught internally, see note above.
 		}
 		if ( $day < 1 || $day > 31 ) {
-			throw new InvalidArgumentException( 'update date day out of range: ' . $day );
+			throw new InvalidArgumentException( 'update date day out of range: ' . $day ); // phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- caught internally, see note above.
 		}
 
 		$this->update_date = array(
@@ -106,17 +112,17 @@ class WPMTM_DBF_Writer {
 			throw new InvalidArgumentException( 'field definition missing name' );
 		}
 		if ( ! $this->is_ascii( $field['name'] ) ) {
-			throw new InvalidArgumentException( 'field name must be ASCII: ' . $field['name'] );
+			throw new InvalidArgumentException( 'field name must be ASCII: ' . $field['name'] ); // phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- caught internally, see note above.
 		}
 		if ( strlen( $field['name'] ) > self::MAX_NAME_LEN ) {
-			throw new InvalidArgumentException( 'field name exceeds ' . self::MAX_NAME_LEN . ' chars: ' . $field['name'] );
+			throw new InvalidArgumentException( 'field name exceeds ' . self::MAX_NAME_LEN . ' chars: ' . $field['name'] ); // phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- caught internally, see note above.
 		}
 		$type = isset( $field['type'] ) ? $field['type'] : 'C';
 		if ( 'C' !== $type ) {
-			throw new InvalidArgumentException( 'only Character (C) fields are supported: ' . $field['name'] );
+			throw new InvalidArgumentException( 'only Character (C) fields are supported: ' . $field['name'] ); // phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- caught internally, see note above.
 		}
 		if ( ! isset( $field['length'] ) || $field['length'] < 1 || $field['length'] > 254 ) {
-			throw new InvalidArgumentException( 'field length must be 1-254: ' . $field['name'] );
+			throw new InvalidArgumentException( 'field length must be 1-254: ' . $field['name'] ); // phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- caught internally, see note above.
 		}
 	}
 
@@ -127,11 +133,11 @@ class WPMTM_DBF_Writer {
 	 */
 	protected function validate_value( array $field, $value ) {
 		if ( ! $this->is_ascii( $value ) ) {
-			throw new InvalidArgumentException( 'field ' . $field['name'] . ' value is not ASCII: ' . $value );
+			throw new InvalidArgumentException( 'field ' . $field['name'] . ' value is not ASCII: ' . $value ); // phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- caught internally, see note above.
 		}
 		if ( strlen( $value ) > $field['length'] ) {
 			throw new InvalidArgumentException(
-				'field ' . $field['name'] . ' value exceeds declared length ' . $field['length'] . ' (' . strlen( $value ) . '): ' . $value
+				'field ' . $field['name'] . ' value exceeds declared length ' . $field['length'] . ' (' . strlen( $value ) . '): ' . $value // phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- caught internally, see note above.
 			);
 		}
 	}
@@ -204,7 +210,7 @@ class WPMTM_DBF_Writer {
 		$bytes  = $this->build();
 		$result = file_put_contents( $path, $bytes );
 		if ( false === $result ) {
-			throw new RuntimeException( 'failed to write DBF file: ' . $path );
+			throw new RuntimeException( 'failed to write DBF file: ' . $path ); // phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- caught internally, see note above.
 		}
 		return $result;
 	}

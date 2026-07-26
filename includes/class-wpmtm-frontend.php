@@ -109,12 +109,71 @@ class WPMTM_Frontend {
 		// never invoked. See filter_etr_event_tabs() below.
 		add_filter( 'etr_event_tabs', array( $this, 'filter_etr_event_tabs' ), 10, 2 );
 
+		// wp-etr 'etr_before_tabs' render slot (2026-07-22): the setup guide
+		// panel renders ABOVE wp-etr's tab nav, so a TD sees it on every tab -
+		// Standings, Wall chart, Round entry, AND wp-etr's own Registrations
+		// tab. Previously it rode inside render_td_command_row(), which lives
+		// in one tab's panel, so it was only present in the DOM of whichever
+		// tab rendered first (Standings) and disappeared on tab switch. The
+		// no-tabs fallback path (build_block()) renders the panel itself,
+		// since 'etr_before_tabs' only fires when wp-etr actually builds tabs.
+		add_action( 'etr_before_tabs', array( $this, 'render_event_setup_guide' ), 10, 1 );
+
+		// FINAL badge (2026-07-23): public (not cap-gated - final status is
+		// public), so it renders on 'etr_before_tabs' too, but at priority 9,
+		// ahead of the setup guide's priority 10, so it sits directly under
+		// the event H1 on every tab rather than below the (TD-only) guide.
+		add_action( 'etr_before_tabs', array( $this, 'render_final_badge' ), 9, 1 );
+
 		add_shortcode( 'wpmtm_standings', array( $this, 'render_standings_shortcode' ) );
 	}
 
 	// -----------------------------------------------------------------
 	// Rendering entry points.
 	// -----------------------------------------------------------------
+
+	/**
+	 * Renders the setup guide panel above wp-etr's tab nav (hooked to
+	 * 'etr_before_tabs'). Capability-gated and tournament-gated; the panel's
+	 * own render_panel_for_event() self-guards against a repeat render.
+	 * Assets are already enqueued by filter_etr_event_tabs() earlier in the
+	 * same request (it runs during apply_event_tabs_filter(), before this
+	 * slot fires), but the enqueue call is idempotent so it is repeated here
+	 * to keep this method correct on its own.
+	 *
+	 * @param int $event_id
+	 */
+	public function render_event_setup_guide( $event_id ) {
+		if ( ! current_user_can( WPMTM_CAPABILITY ) ) {
+			return;
+		}
+		$tournament = WPMTM_Repository::get_tournament_by_event( (int) $event_id );
+		if ( ! $tournament || ! WPMTM_Roles::user_can_manage_tournament( $tournament ) ) {
+			return;
+		}
+		WPMTM_Frontend_Public::instance()->enqueue_frontend_assets();
+		WPMTM_Wizard::instance()->render_panel_for_event( $tournament );
+	}
+
+	/**
+	 * FINAL badge, once per page, directly under the event H1 - public (not
+	 * cap-gated: a tournament's locked status is public), shown on every tab
+	 * since it hooks 'etr_before_tabs' rather than one tab's own render
+	 * method. Replaces the old per-tab badge WPMTM_Frontend_Public::
+	 * render_standings_only() used to echo as the first line of the
+	 * Standings tab only (removed 2026-07-23). render_public_block()'s
+	 * inline <h2>Standings</h2> badge is untouched - that path is the
+	 * no-tabs fallback, where 'etr_before_tabs' never fires.
+	 *
+	 * @param int $event_id
+	 */
+	public function render_final_badge( $event_id ) {
+		$tournament = WPMTM_Repository::get_tournament_by_event( (int) $event_id );
+		if ( ! $tournament || ! (bool) $tournament->locked ) {
+			return;
+		}
+		echo '<p class="wpmtm-final-badge wpmtm-final-badge-page">' . esc_html__( 'FINAL', 'wp-tournament-manager' ) . '</p>';
+	}
 
 	public function filter_the_content( $content ) {
 		if ( $this->rendered_this_request ) {
@@ -169,7 +228,7 @@ class WPMTM_Frontend {
 			return '';
 		}
 
-		$can_manage = current_user_can( WPMTM_CAPABILITY );
+		$can_manage = WPMTM_Roles::user_can_manage_tournament( $tournament );
 
 		// Every visitor sees the standings/wall chart, so assets/wpmtm-
 		// frontend.css/.js (the Wall chart tab's Print button among other
@@ -182,10 +241,23 @@ class WPMTM_Frontend {
 
 		echo '<div class="' . esc_attr( self::CONTENT_MARKER ) . '">';
 		$this->render_notices();
-		WPMTM_Frontend_Public::instance()->render_public_block( $tournament );
+		// No-tabs fallback path only: when wp-etr is inactive/older there is no
+		// tab nav and 'etr_before_tabs' never fires, so the panel is rendered
+		// here instead. When wp-etr IS active this method never runs (the
+		// shared $rendered_this_request flag, set by filter_etr_event_tabs(),
+		// short-circuits filter_the_content()), so the panel is not rendered
+		// twice. Self-guards on capability and single-render internally.
+		if ( $can_manage ) {
+			WPMTM_Wizard::instance()->render_panel_for_event( $tournament );
+		}
+		// $show_td_note = $can_manage: DONOTCACHEPAGE is defined below in the
+		// same condition, so whenever the TD-only note could render here,
+		// this whole page is guaranteed never cached (see
+		// WPMTM_Frontend_Public::render_public_block()'s docblock).
+		WPMTM_Frontend_Public::instance()->render_public_block( $tournament, $can_manage );
 
 		if ( $can_manage ) {
-			( ! defined( 'DONOTCACHEPAGE' ) ) && define( 'DONOTCACHEPAGE', true );
+			( ! defined( 'DONOTCACHEPAGE' ) ) && define( 'DONOTCACHEPAGE', true ); // phpcs:ignore WordPress.NamingConventions.PrefixAllGlobals.NonPrefixedConstantFound -- DONOTCACHEPAGE is a well-known cache-control signal constant recognized by W3 Total Cache and other caching plugins, not a constant of ours that needs the WPMTM_ prefix.
 			WPMTM_Frontend_TD::instance()->render_td_block( $tournament );
 		}
 
@@ -249,6 +321,20 @@ class WPMTM_Frontend {
 			'html'  => ob_get_clean(),
 		);
 
+		// Pairings sits second, right after Standings (2026-07-23): it is the
+		// "who do I play right now" view players reach for at the start of a
+		// round, so it earns a spot ahead of the historical Wall chart. Public
+		// like Standings/Wall chart - render_pairings_only() only ever shows
+		// rounds WPMTM_Round_Selector::published_rounds() considers fully
+		// paired, so it never leaks a draft the TD is still entering.
+		ob_start();
+		WPMTM_Frontend_Public::instance()->render_pairings_only( $tournament );
+		$tabs[] = array(
+			'id'    => 'pairings',
+			'label' => __( 'Pairings', 'wp-tournament-manager' ),
+			'html'  => ob_get_clean(),
+		);
+
 		ob_start();
 		WPMTM_Frontend_Public::instance()->render_wall_chart_only( $tournament );
 		$tabs[] = array(
@@ -257,15 +343,20 @@ class WPMTM_Frontend {
 			'html'  => ob_get_clean(),
 		);
 
-		if ( current_user_can( WPMTM_CAPABILITY ) ) {
-			( ! defined( 'DONOTCACHEPAGE' ) ) && define( 'DONOTCACHEPAGE', true );
+		if ( WPMTM_Roles::user_can_manage_tournament( $tournament ) ) {
+			( ! defined( 'DONOTCACHEPAGE' ) ) && define( 'DONOTCACHEPAGE', true ); // phpcs:ignore WordPress.NamingConventions.PrefixAllGlobals.NonPrefixedConstantFound -- DONOTCACHEPAGE is a well-known cache-control signal constant recognized by W3 Total Cache and other caching plugins, not a constant of ours that needs the WPMTM_ prefix.
 
 			ob_start();
 			$this->render_notices();
 			WPMTM_Frontend_TD::instance()->render_td_block( $tournament );
 			$tabs[] = array(
+				// Label "Rounds" (2026-07-23): the tab does round entry AND
+				// pairings, so "Round entry" undersold it. The id stays
+				// 'round-entry' so the '#tab-round-entry' deep-link hash, every
+				// internal link that builds it, and any TD's bookmark keep
+				// working - only the visible label changed.
 				'id'    => 'round-entry',
-				'label' => __( 'Round entry', 'wp-tournament-manager' ),
+				'label' => __( 'Rounds', 'wp-tournament-manager' ),
 				'html'  => ob_get_clean(),
 			);
 		}

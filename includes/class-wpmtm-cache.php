@@ -51,7 +51,7 @@ class WPMTM_Cache {
 			}
 
 			// LiteSpeed Cache: safe unconditionally, a no-op when LiteSpeed is not active.
-			do_action( 'litespeed_purge_post', $id );
+			do_action( 'litespeed_purge_post', $id ); // phpcs:ignore WordPress.NamingConventions.PrefixAllGlobals.NonPrefixedHooknameFound -- this is LiteSpeed Cache's own hook name, required verbatim to integrate with it; it is not a hook this plugin defines for others.
 
 			// WP Fastest Cache.
 			if ( function_exists( 'wpfc_clear_post_cache_by_id' ) ) {

@@ -98,4 +98,89 @@ class WPMTM_Round_Selector {
 		$requested_round = max( 1, (int) $requested_round );
 		return min( $requested_round, self::max_reachable_round( $tot_rnds, $rounds_with_results ) );
 	}
+
+	/**
+	 * The rounds whose pairings are complete enough to show players on the
+	 * public Pairings tab (docs/SPEC.md, 2026-07-23, player-facing pairings):
+	 * a round is "published" when every player still active for it has been
+	 * accounted for - either seated at a board (as white or black) or given a
+	 * bye. A partially-paired round (the TD mid-entry) is deliberately NOT
+	 * published, so a draft never flashes to players; because a TD saves a
+	 * whole round at once, "fully paired" lines up with "the TD finished".
+	 *
+	 * "Still active for round R" means not withdrawn before it:
+	 * withdrawn_after_round is null, or >= R (a player withdrawn after round 2
+	 * played rounds 1-2, so is required in those but not in round 3+). A player
+	 * id of 0 in a game row (a placeholder half of an unplayed pairing) is
+	 * ignored - it can never satisfy a real player's requirement.
+	 *
+	 * Pure and WordPress-independent like the rest of this class, so
+	 * tests/run-tests.php's zero-WP runner covers it directly.
+	 *
+	 * @param array[] $players  Player rows (id, withdrawn_after_round), from
+	 *                          WPMTM_Frontend_Public::map_players().
+	 * @param array[] $games    Game rows (round, white_player_id,
+	 *                          black_player_id), from section_data_arrays().
+	 * @param array[] $byes     Bye rows (player_id, round).
+	 * @param int     $tot_rnds Section's configured round count.
+	 * @return int[] Ascending list of published round numbers (may be empty).
+	 */
+	public static function published_rounds( array $players, array $games, array $byes, $tot_rnds ) {
+		$tot_rnds = max( 1, (int) $tot_rnds );
+		if ( empty( $players ) ) {
+			return array();
+		}
+
+		// round => [ player_id => true ] for everyone accounted for that round.
+		$accounted = array();
+		foreach ( $games as $g ) {
+			$r = (int) $g['round'];
+			foreach ( array( (int) $g['white_player_id'], (int) $g['black_player_id'] ) as $pid ) {
+				if ( $pid > 0 ) {
+					$accounted[ $r ][ $pid ] = true;
+				}
+			}
+		}
+		foreach ( $byes as $b ) {
+			$accounted[ (int) $b['round'] ][ (int) $b['player_id'] ] = true;
+		}
+
+		$published = array();
+		for ( $r = 1; $r <= $tot_rnds; $r++ ) {
+			$round_acc  = isset( $accounted[ $r ] ) ? $accounted[ $r ] : array();
+			$has_active = false;
+			$all_seated = true;
+			foreach ( $players as $p ) {
+				$wd = isset( $p['withdrawn_after_round'] ) ? $p['withdrawn_after_round'] : null;
+				if ( null !== $wd && (int) $wd < $r ) {
+					continue; // Withdrawn before this round; not required.
+				}
+				$has_active = true;
+				if ( empty( $round_acc[ (int) $p['id'] ] ) ) {
+					$all_seated = false;
+					break;
+				}
+			}
+			if ( $has_active && $all_seated ) {
+				$published[] = $r;
+			}
+		}
+		return $published;
+	}
+
+	/**
+	 * Whether the round-entry Byes area should offer its "Withdraw" option
+	 * (docs/SPEC.md, 2026-07-18, withdraw-dropdown gating): withdrawing "as
+	 * of" a round only means anything when a LATER round still exists to be
+	 * dropped from. The final round of a section has no round after it, so
+	 * offering Withdraw there is meaningless - a player not playing the
+	 * final round gets a bye/unplayed entry instead, never a withdrawal.
+	 *
+	 * @param int $selected_round The round currently being entered.
+	 * @param int $tot_rnds       Section's configured round count.
+	 * @return bool
+	 */
+	public static function withdraw_offered( $selected_round, $tot_rnds ) {
+		return (int) $selected_round < (int) $tot_rnds;
+	}
 }

@@ -30,17 +30,101 @@
 	padding-top: 16px;
 }
 
+/* Inside a wp-etr tab panel (the "Rounds" tab) the 16px above is an unwanted
+   gap: Standings and Wall chart render their command row directly at the top
+   of the panel, but Round entry wraps it in .wpmtm-td-panel, so that padding
+   pushed the command bar down and made the vertical spacing inconsistent
+   across the three tabs (2026-07-23, owner request). Zero it only in the tab
+   context; the no-tabs inline path still uses the 16px to separate this panel
+   from the public standings block above it. */
+.etr-tabpanel .wpmtm-td-panel {
+	padding-top: 0;
+}
+
 .wpmtm-td-section-panel {
 	margin-bottom: 32px;
 }
 
-.wpmtm-round-selector a {
-	margin-right: 6px;
+/* Round selector (2026-07-24 redesign): same pill-band look as
+   .wpmtm-section-tablist-band/.wpmtm-section-tab below, so round and
+   section switching read as the same kind of control. See
+   render_round_selector()'s docblock (class-wpmtm-frontend-td.php) for
+   why the old bold-line-plus-underline version made the current round
+   hard to spot. */
+.wpmtm-round-selector-band {
+	display: flex;
+	align-items: center;
+	flex-wrap: wrap;
+	gap: 8px;
+	margin: 0 0 20px;
+	padding: 10px 14px;
+	background: #f7f7f5;
+	border: 1px solid #e2e2df;
+	border-radius: 4px;
 }
 
-.wpmtm-round-selector strong {
-	margin-right: 6px;
-	text-decoration: underline;
+.wpmtm-round-selector-label {
+	font-size: 0.85rem;
+	font-weight: 600;
+	color: #666;
+}
+
+.wpmtm-round-selector {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 6px;
+}
+
+.wpmtm-round-tab {
+	display: inline-flex;
+	align-items: center;
+	min-height: 32px;
+	padding: 0.3em 0.85em;
+	font-size: 0.85rem;
+	font-weight: 600;
+	color: #444;
+	background: #f3f3f3;
+	border: 1px solid #cfcfcf;
+	border-radius: 4px 4px 0 0;
+	cursor: pointer;
+}
+
+a.wpmtm-round-tab:hover,
+a.wpmtm-round-tab:focus-visible {
+	background: #e9e9e9;
+	color: #000;
+}
+
+.wpmtm-round-tab[aria-selected="true"] {
+	background: #fff;
+	color: #000;
+	border-color: #787c82;
+	border-bottom: 3px solid #2271b1;
+	cursor: default;
+}
+
+/* State-aware pairing-aid/entry-form disclosure (2026-07-24, Rounds-tab
+   redesign #13 - visually groups the two blocks and only maximizes the
+   one relevant to the current round's state; see class-wpmtm-frontend-
+   td.php's render_section_td_panel()). */
+.wpmtm-pairing-aid-details,
+.wpmtm-round-entry-details {
+	margin: 0 0 20px;
+	padding: 14px 16px;
+	border: 1px solid #e2e2df;
+	border-radius: 4px;
+}
+
+.wpmtm-pairing-aid-details > summary,
+.wpmtm-round-entry-details > summary {
+	font-size: 1.1rem;
+	font-weight: 700;
+	cursor: pointer;
+}
+
+.wpmtm-pairing-aid-details[open] > summary,
+.wpmtm-round-entry-details[open] > summary {
+	margin-bottom: 12px;
 }
 
 .wpmtm-col-num {
@@ -135,6 +219,18 @@
 	object-fit: cover;
 }
 
+/* Page-weight fix: the "no photo" silhouette used to be a ~330-byte inline
+   <svg> repeated in the HTML for every player with no photo (WPMTM_Frontend_
+   Public::render_avatar()) - on a large roster that duplicated the same
+   static shape dozens of times. It is now a plain <span class="wpmtm-avatar
+   wpmtm-avatar--placeholder">, and the shape itself lives here once, as a
+   data-URI background image the browser decodes/caches like any other CSS
+   background - shipped once in this stylesheet regardless of how many
+   placeholder avatars a page shows. */
+.wpmtm-avatar--placeholder {
+	background: #EAE7DE url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 128 128'%3E%3Ccircle cx='64' cy='50' r='22' fill='%23b48c49' fill-opacity='.55'/%3E%3Cpath d='M24 118c4-26 20-38 40-38s36 12 40 38' fill='%23b48c49' fill-opacity='.55'/%3E%3C/svg%3E") no-repeat center / cover;
+}
+
 /* Change 4: shared ETR-style look (mirrors wp-etr's assets/etr-
    registrations.css .etr-table) for the standings, wall chart, pairing
    aid (score-group), byes, and boards tables. Every render call site for
@@ -160,15 +256,60 @@
 	color: #666;
 }
 
-/* Change 5: Print toolbar on the Wall chart tab, styled to match wp-etr's
-   .etr-toolbar / .etr-btn (assets/etr-registrations.css) - parity with
-   ETR's own public Print button. assets/wpmtm-frontend.js binds the
-   click on [data-wpmtm-print] to window.print(). */
+/* Imported registrant note (docs/SPEC.md, "Decisions (2026-07-17, import
+   the registrant note)"), shown under a player's name in the Round entry
+   Byes area. Front-end page, so this defines its own muted look instead
+   of relying on wp-admin's core .description class (not available here);
+   white-space preserves the registrant's own line breaks since it is
+   free text, not a single-line field. */
+.wpmtm-player-note {
+	margin: 0.25em 0 0;
+	font-size: 0.85em;
+	color: #666;
+	white-space: pre-wrap;
+}
+
+/* TD-only "why" note on the Standings table when a section is not yet
+   complete (docs/SPEC.md, "Decisions (2026-07-18, rank by score until
+   complete)"). Gated in PHP on current_user_can( WPMTM_CAPABILITY ), so
+   this class only ever prints in a TD's own render; styled distinctly
+   (italic, left border) so it visually reads as an aside rather than
+   plugin-wide help text like .wpmtm-standings-help. */
+.wpmtm-standings-td-note {
+	margin: 0.5em 0 0;
+	padding: 0.3em 0.6em;
+	font-size: 0.85em;
+	font-style: italic;
+	color: #666;
+	border-left: 3px solid #cfcfcf;
+}
+
+/* Change 5: Print button, styled to match wp-etr's .etr-toolbar / .etr-btn
+   (assets/etr-registrations.css) - parity with ETR's own public Print
+   button. assets/wpmtm-frontend.js binds the click on [data-wpmtm-print] to
+   window.print(). */
+/* On Standings and Wall chart (2026-07-22: owner wants Print as the FIRST
+   command, immediately before "Edit tournament"), the button renders INSIDE
+   .wpmtm-td-command-row itself (WPMTM_Frontend_Public::
+   render_td_command_row()'s own $print_scope param), so it just needs
+   .wpmtm-td-command-row's existing layout - no separate toolbar div to
+   position relative to it any more. .wpmtm-toolbar below still stands on
+   its own for the two callers that still use a standalone toolbar: the
+   Round entry "Print pairing sheet" button (no command row to embed into,
+   since Round entry's own command row sits above the per-section panels)
+   and any future plain window.print() use. */
 .wpmtm-toolbar {
-	display: flex;
+	display: inline-flex;
 	flex-wrap: wrap;
+	vertical-align: top;
 	gap: 0.4rem;
-	margin: 0 0 1.25em;
+	margin: 0 0.6rem 1.25em 0;
+}
+
+.wpmtm-td-command-row {
+	display: inline-flex;
+	vertical-align: top;
+	margin: 0 0.6rem 1.25em 0;
 }
 
 .wpmtm-btn {
@@ -191,20 +332,65 @@
 	color: #000;
 }
 
-/* Change 6: "Final" badge next to the Standings heading, and the Round
-   entry tab's locked banner, both shown only once a tournament is locked. */
+/* Change 6: "Final" badge next to the Standings heading (no-tabs fallback
+   only - render_public_block()), and the Round entry tab's locked banner,
+   both shown only once a tournament is locked. Restyled 2026-07-23 to match
+   ETR's .etr-tab-count bubble shape but in an attention-getting red, since
+   the page-level variant below now carries the primary "this is final"
+   signal on every tab. */
+/* Fixed px, not em (2026-07-24 fix): this badge now also renders inside
+   the event H1 (see .wpmtm-final-badge-page below), whose own font-size
+   is 3-4x normal body text - an em value here would scale with whichever
+   heading/paragraph it lands in instead of staying badge-sized. 15px
+   matches ETR's .etr-tab-count live computed size exactly (confirmed via
+   getComputedStyle on the Registrations tab count bubble). !important
+   (2026-07-24, second fix): the theme's block-editor global-styles sheet
+   carries a higher-specificity rule setting font-size:inherit on p
+   elements inside headings/typography contexts, which was winning over
+   this plain class selector and inheriting the H1's ~42px instead of
+   15px (confirmed via a live cascade dump - the 15px rule was present in
+   the CSSOM but never applied). This badge is deliberately placed inside
+   unpredictable ancestor typography (a <p> in the no-JS fallback, an
+   <h1> once JS moves it) and must never inherit contextual font-size
+   regardless of theme changes - !important is the correct, permanent
+   fix here, not a specificity workaround for one theme's current rule. */
 .wpmtm-final-badge {
 	display: inline-block;
-	padding: 1px 8px;
+	padding: 2px 10px;
 	margin-left: 6px;
-	border-radius: 3px;
-	background: #f0f0f1;
-	color: #50575e;
-	font-size: 0.6em;
+	border-radius: 999px;
+	background: #c00;
+	color: #fff;
+	font-size: 15px !important;
 	font-weight: 700;
 	text-transform: uppercase;
-	letter-spacing: 0.04em;
+	letter-spacing: 0.06em;
 	vertical-align: middle;
+}
+
+/* Page-level FINAL badge (2026-07-23, repositioned 2026-07-24): rendered
+   once, on every tab (WPMTM_Frontend::render_final_badge(), hooked to
+   wp-etr's 'etr_before_tabs' at priority 9). TEC's title.php prints the H1
+   via the_title() with no filter hook to inject a sibling, so
+   wpmtm-frontend.js moves this badge to be the H1's last child on load
+   (see the "Page-level FINAL badge placement" block in that file) - this
+   rule lays the H1 out as a flex row once the badge lands inside it. With
+   JavaScript absent or failing, the badge stays where PHP rendered it
+   (this block's own margin keeps that no-JS placement readable, directly
+   under the H1 - graceful degradation, not the primary layout). */
+.wpmtm-final-badge-page {
+	margin: 0 0 12px;
+}
+
+.tribe-events-single-event-title {
+	display: flex;
+	align-items: center;
+	flex-wrap: wrap;
+	gap: 12px;
+}
+
+.tribe-events-single-event-title .wpmtm-final-badge-page {
+	margin: 0;
 }
 
 .wpmtm-locked-banner {
@@ -216,6 +402,30 @@
 
 .wpmtm-locked-banner p {
 	margin: 4px 0;
+}
+
+/* 2026-07-21: the re-download link's <form> is inline so the button reads
+   like the rest of the banner's text-weight links, not a full standalone
+   button - styled to match a plain link (no border/background) rather
+   than .wpmtm-btn's chip style. */
+.wpmtm-locked-banner-export {
+	display: inline;
+	margin: 4px 0;
+}
+
+.wpmtm-locked-banner-export-btn {
+	padding: 0;
+	border: 0;
+	background: none;
+	color: #2271b1;
+	text-decoration: underline;
+	cursor: pointer;
+	font-size: inherit;
+}
+
+.wpmtm-locked-banner-export-btn:hover,
+.wpmtm-locked-banner-export-btn:focus-visible {
+	color: #135e96;
 }
 
 @media print {
@@ -291,4 +501,199 @@
 
 .wpmtm-validate-row--unknown .wpmtm-validate-verdict {
 	color: #8a6d3b;
+}
+
+/* Round entry section sub-tabs (docs/SPEC.md, 2026-07-18): the tablist and
+   .wpmtm-section-panel wrapper only exist in the markup when a tournament
+   has 2+ sections (WPMTM_Frontend_TD::render_td_block()) - a single-section
+   tournament never gets this markup at all, so its Round entry tab is
+   unchanged. Phone-first: tap targets are at least 44px tall, the strip
+   wraps rather than clipping or requiring a scroll gesture when section
+   names or count push it past the viewport width, and the active tab
+   carries an unmistakable visual indicator since the persona is working
+   this one-handed at the venue with partial attention. */
+.wpmtm-section-tablist {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 6px;
+	margin: 0 0 20px;
+	padding-bottom: 6px;
+	border-bottom: 1px solid #cfcfcf;
+}
+
+/* Polish pass on the section sub-tab strip (2026-07-24, Rounds-tab
+   redesign #9 - owner's real complaint is that the strip looks unattractive/
+   unfinished, not that it's confusable with wp-etr's own top-level tab
+   row above it). A background band with an indent and a "Section:"
+   label gives it the same card-like framing this plugin already uses
+   elsewhere (.wpmtm-pairing-aid-details / .wpmtm-round-entry-details
+   below, .wpmtm-locked-banner), staying within the existing visual
+   language rather than introducing a new one. The tabs inside
+   (.wpmtm-section-tab) already carry their own box styling (background/
+   border/border-radius, added 2026-07-21) - this wraps that, it does not
+   replace it. */
+.wpmtm-section-tablist-band {
+	display: flex;
+	align-items: center;
+	flex-wrap: wrap;
+	gap: 8px;
+	margin: 0 0 20px;
+	padding: 10px 14px;
+	background: #f7f7f5;
+	border: 1px solid #e2e2df;
+	border-radius: 4px;
+}
+
+.wpmtm-section-tablist-label {
+	font-size: 0.85rem;
+	font-weight: 600;
+	color: #666;
+}
+
+.wpmtm-section-tablist-band .wpmtm-section-tablist {
+	margin: 0;
+	padding-bottom: 0;
+	border-bottom: none;
+}
+
+.wpmtm-section-tablist-band .wpmtm-section-tab {
+	font-size: 0.85rem;
+}
+
+/* Owner request (2026-07-21): shorter than the original 44px touch target
+   (the phone-first tap-target reasoning above still holds in principle,
+   this is a deliberate owner override, not a reversal of it). */
+.wpmtm-section-tab {
+	display: inline-flex;
+	align-items: center;
+	min-height: 32px;
+	padding: 0.3em 0.85em;
+	font-size: 0.9rem;
+	font-weight: 600;
+	color: #444;
+	background: #f3f3f3;
+	border: 1px solid #cfcfcf;
+	border-radius: 4px 4px 0 0;
+	cursor: pointer;
+}
+
+.wpmtm-section-tab:hover,
+.wpmtm-section-tab:focus-visible {
+	background: #e9e9e9;
+	color: #000;
+}
+
+.wpmtm-section-tab[aria-selected="true"] {
+	background: #fff;
+	color: #000;
+	border-color: #787c82;
+	border-bottom: 3px solid #2271b1;
+}
+
+/* assets/wpmtm-frontend.js toggles this on load and on tab switch; without
+   JavaScript it is never added, so every panel stays visible (progressive
+   enhancement, never a gate). */
+.wpmtm-section-panel--hidden {
+	display: none;
+}
+
+/* A new rule rather than adding to the existing @media print block above,
+   per the append-only instruction for this file: the tab strip itself is
+   not useful on a printed pairing sheet (its buttons do nothing on
+   paper), so it is hidden on print the same way .wpmtm-toolbar is. */
+@media print {
+	.wpmtm-section-tablist {
+		display: none !important;
+	}
+}
+
+/* TEC / Event Tickets cruft that renders OUTSIDE wp-etr's tab panels (event
+   date/cost header, prev/next event navigation, the "Get Tickets" form, the
+   "Add to calendar" widget, and the TEC meta groups) is hidden on Tournament
+   Manager's own event-page tabs - Standings, Pairings, Wall chart, and Rounds
+   (tab ids standings / pairings / wall-chart / round-entry). TM owns hiding this cruft on TM's
+   tabs; wp-etr owns it on its Registrations tab (assets/etr-registrations.css).
+   Both read the same data-etr-active-tab attribute that wp-etr's etr-tabs.js
+   mirrors onto <body>, so the net effect is that this cruft appears only on
+   the Details tab. Runs for every visitor, since Standings/Wall chart are
+   public. !important because the TEC theme sets display on these directly.
+   (2026-07-23, owner request.) */
+body[data-etr-active-tab="standings"] .tribe-events-schedule,
+body[data-etr-active-tab="standings"] .tribe-events-nav-pagination,
+body[data-etr-active-tab="standings"] .tribe-events-c-subscribe-dropdown__container,
+body[data-etr-active-tab="standings"] .event-tickets,
+body[data-etr-active-tab="standings"] .tribe-tickets__tickets-wrapper,
+body[data-etr-active-tab="standings"] .tribe-events-event-meta,
+body[data-etr-active-tab="standings"] .tribe-events-meta-group-details,
+body[data-etr-active-tab="standings"] .tribe-events-meta-group-venue,
+body[data-etr-active-tab="standings"] .tribe-events-meta-group-organizer,
+body[data-etr-active-tab="pairings"] .tribe-events-schedule,
+body[data-etr-active-tab="pairings"] .tribe-events-nav-pagination,
+body[data-etr-active-tab="pairings"] .tribe-events-c-subscribe-dropdown__container,
+body[data-etr-active-tab="pairings"] .event-tickets,
+body[data-etr-active-tab="pairings"] .tribe-tickets__tickets-wrapper,
+body[data-etr-active-tab="pairings"] .tribe-events-event-meta,
+body[data-etr-active-tab="pairings"] .tribe-events-meta-group-details,
+body[data-etr-active-tab="pairings"] .tribe-events-meta-group-venue,
+body[data-etr-active-tab="pairings"] .tribe-events-meta-group-organizer,
+body[data-etr-active-tab="wall-chart"] .tribe-events-schedule,
+body[data-etr-active-tab="wall-chart"] .tribe-events-nav-pagination,
+body[data-etr-active-tab="wall-chart"] .tribe-events-c-subscribe-dropdown__container,
+body[data-etr-active-tab="wall-chart"] .event-tickets,
+body[data-etr-active-tab="wall-chart"] .tribe-tickets__tickets-wrapper,
+body[data-etr-active-tab="wall-chart"] .tribe-events-event-meta,
+body[data-etr-active-tab="wall-chart"] .tribe-events-meta-group-details,
+body[data-etr-active-tab="wall-chart"] .tribe-events-meta-group-venue,
+body[data-etr-active-tab="wall-chart"] .tribe-events-meta-group-organizer,
+body[data-etr-active-tab="round-entry"] .tribe-events-schedule,
+body[data-etr-active-tab="round-entry"] .tribe-events-nav-pagination,
+body[data-etr-active-tab="round-entry"] .tribe-events-c-subscribe-dropdown__container,
+body[data-etr-active-tab="round-entry"] .event-tickets,
+body[data-etr-active-tab="round-entry"] .tribe-tickets__tickets-wrapper,
+body[data-etr-active-tab="round-entry"] .tribe-events-event-meta,
+body[data-etr-active-tab="round-entry"] .tribe-events-meta-group-details,
+body[data-etr-active-tab="round-entry"] .tribe-events-meta-group-venue,
+body[data-etr-active-tab="round-entry"] .tribe-events-meta-group-organizer {
+	display: none !important;
+}
+
+/* Hide TEC's "All Events" back link (.tribe-events-back) and the "This event
+   has passed." notice (.tribe-events-notices) on the WHOLE single-event page,
+   every tab including Details and Registrations (2026-07-23, owner request:
+   originally scoped to TM's own tabs, now hidden everywhere on the event
+   page). Both render outside the tab panels as direct children of
+   #tribe-events-content, so a page-level scope (.single-tribe_events) is the
+   right reach; this stylesheet only loads on a TM-linked event anyway. */
+.single-tribe_events .tribe-events-back,
+.single-tribe_events .tribe-events-notices {
+	display: none !important;
+}
+
+/* TEC top-gap override (2026-07-23). Measured live on event 4547: the gap
+   above the event H1 is TWO collapsed-margin/padding contributors, not TEC
+   core's own .tribe-events-pg-template padding-top alone -
+   .wp-block-group/.tec-block__single-event's 24px margin-top (theme content
+   wrapper + TEC's own block, their margins collapse to max(24,24)=24px, not
+   additive) PLUS .tribe-events-pg-template's 40px padding-top = 64px total.
+   Zeroing the margin and trimming the padding to 18px brings that down to
+   ~18px - not 0, keeps some breathing room per owner request. Affects the
+   Details tab too (same H1, same ancestor chain) - verified visually,
+   nothing crowds the theme header above it. Selector/values are TEC-version-
+   dependent and must be re-measured (same live-DOM walk: getBoundingClientRect
+   on .tribe-events-single-event-title and each ancestor) if a TEC update
+   changes this markup or its 40px/24px defaults. */
+.single-tribe_events .tec-block__single-event {
+	margin-top: 0;
+}
+.single-tribe_events .tribe-events-pg-template {
+	padding-top: 18px;
+}
+
+/* Round selector band on print (2026-07-24): same reasoning as the
+   .wpmtm-section-tablist print rule above - its links do nothing on
+   paper, so hide it from the printed pairing sheet. */
+@media print {
+	.wpmtm-round-selector-band {
+		display: none !important;
+	}
 }

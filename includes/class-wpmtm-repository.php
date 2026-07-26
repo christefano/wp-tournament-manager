@@ -21,12 +21,12 @@ class WPMTM_Repository {
 
 	public static function get_tournament( $id ) {
 		global $wpdb;
-		return $wpdb->get_row( $wpdb->prepare( 'SELECT * FROM ' . WPMTM_Schema::table( 'tournaments' ) . ' WHERE id = %d', $id ) );
+		return $wpdb->get_row( $wpdb->prepare( 'SELECT * FROM ' . WPMTM_Schema::table( 'tournaments' ) . ' WHERE id = %d', $id ) ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.PreparedSQL.NotPrepared, PluginCheck.Security.DirectDB.UnescapedDBParameter -- custom wpmtm_* table, no core API; table name from WPMTM_Schema::table(), not user input; value bound via prepare().
 	}
 
 	public static function get_section( $id ) {
 		global $wpdb;
-		return $wpdb->get_row( $wpdb->prepare( 'SELECT * FROM ' . WPMTM_Schema::table( 'sections' ) . ' WHERE id = %d', $id ) );
+		return $wpdb->get_row( $wpdb->prepare( 'SELECT * FROM ' . WPMTM_Schema::table( 'sections' ) . ' WHERE id = %d', $id ) ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.PreparedSQL.NotPrepared, PluginCheck.Security.DirectDB.UnescapedDBParameter -- custom wpmtm_* table, no core API; table name from WPMTM_Schema::table(), not user input; value bound via prepare().
 	}
 
 	/**
@@ -43,22 +43,22 @@ class WPMTM_Repository {
 			return null;
 		}
 		global $wpdb;
-		return $wpdb->get_row( $wpdb->prepare( 'SELECT * FROM ' . WPMTM_Schema::table( 'tournaments' ) . ' WHERE event_post_id = %d', $event_post_id ) );
+		return $wpdb->get_row( $wpdb->prepare( 'SELECT * FROM ' . WPMTM_Schema::table( 'tournaments' ) . ' WHERE event_post_id = %d', $event_post_id ) ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.PreparedSQL.NotPrepared, PluginCheck.Security.DirectDB.UnescapedDBParameter -- custom wpmtm_* table, no core API; table name from WPMTM_Schema::table(), not user input; value bound via prepare().
 	}
 
 	public static function get_sections( $tournament_id ) {
 		global $wpdb;
-		return $wpdb->get_results( $wpdb->prepare( 'SELECT * FROM ' . WPMTM_Schema::table( 'sections' ) . ' WHERE tournament_id = %d ORDER BY sec_num ASC', $tournament_id ) );
+		return $wpdb->get_results( $wpdb->prepare( 'SELECT * FROM ' . WPMTM_Schema::table( 'sections' ) . ' WHERE tournament_id = %d ORDER BY sec_num ASC', $tournament_id ) ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.PreparedSQL.NotPrepared, PluginCheck.Security.DirectDB.UnescapedDBParameter -- custom wpmtm_* table, no core API; table name from WPMTM_Schema::table(), not user input; value bound via prepare().
 	}
 
 	public static function get_players( $section_id ) {
 		global $wpdb;
-		return $wpdb->get_results( $wpdb->prepare( 'SELECT * FROM ' . WPMTM_Schema::table( 'players' ) . ' WHERE section_id = %d ORDER BY pair_num ASC', $section_id ) );
+		return $wpdb->get_results( $wpdb->prepare( 'SELECT * FROM ' . WPMTM_Schema::table( 'players' ) . ' WHERE section_id = %d ORDER BY pair_num ASC', $section_id ) ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.PreparedSQL.NotPrepared, PluginCheck.Security.DirectDB.UnescapedDBParameter -- custom wpmtm_* table, no core API; table name from WPMTM_Schema::table(), not user input; value bound via prepare().
 	}
 
 	public static function count_players( $section_id ) {
 		global $wpdb;
-		return (int) $wpdb->get_var( $wpdb->prepare( 'SELECT COUNT(*) FROM ' . WPMTM_Schema::table( 'players' ) . ' WHERE section_id = %d', $section_id ) );
+		return (int) $wpdb->get_var( $wpdb->prepare( 'SELECT COUNT(*) FROM ' . WPMTM_Schema::table( 'players' ) . ' WHERE section_id = %d', $section_id ) ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.PreparedSQL.NotPrepared, PluginCheck.Security.DirectDB.UnescapedDBParameter -- custom wpmtm_* table, no core API; table name from WPMTM_Schema::table(), not user input; value bound via prepare().
 	}
 
 	/**
@@ -84,7 +84,7 @@ class WPMTM_Repository {
 			GROUP BY t.id
 			ORDER BY t.begin_date DESC, t.id DESC";
 
-		return $wpdb->get_results( $sql ); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared -- static SQL, no user input.
+		return $wpdb->get_results( $sql ); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared, WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, PluginCheck.Security.DirectDB.UnescapedDBParameter -- static SQL, no user input.
 	}
 
 	/**
@@ -100,16 +100,10 @@ class WPMTM_Repository {
 		$s_table = WPMTM_Schema::table( 'sections' );
 		$p_table = WPMTM_Schema::table( 'players' );
 
-		$rows = $wpdb->get_results(
-			$wpdb->prepare(
-				"SELECT s.id AS section_id, COUNT(p.id) AS player_count
-				FROM {$s_table} s
-				LEFT JOIN {$p_table} p ON p.section_id = s.id
-				WHERE s.tournament_id = %d
-				GROUP BY s.id",
-				$tournament_id
-			)
-		);
+		$sql = "SELECT s.id AS section_id, COUNT(p.id) AS player_count FROM {$s_table} s LEFT JOIN {$p_table} p ON p.section_id = s.id WHERE s.tournament_id = %d GROUP BY s.id"; // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- custom wpmtm_* tables, no core API; $s_table/$p_table come from WPMTM_Schema::table(), a trusted internal constant, not user input.
+
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching,PluginCheck.Security.DirectDB.UnescapedDBParameter,WordPress.DB.PreparedSQL.NotPrepared -- custom wpmtm_* tables, no core API; $sql is the literal string built above (not user input) and IS passed through $wpdb->prepare() with $tournament_id bound as its placeholder; the sniff cannot see through the $sql variable to confirm that statically.
+		$rows = $wpdb->get_results( $wpdb->prepare( $sql, $tournament_id ) );
 
 		$counts = array();
 		foreach ( $rows as $row ) {
@@ -130,13 +124,13 @@ class WPMTM_Repository {
 		$table = WPMTM_Schema::table( 'games' );
 
 		if ( null !== $round ) {
-			return $wpdb->get_results(
-				$wpdb->prepare( "SELECT * FROM {$table} WHERE section_id = %d AND round = %d ORDER BY round ASC, board ASC", $section_id, $round )
+			return $wpdb->get_results( // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, PluginCheck.Security.DirectDB.UnescapedDBParameter -- custom wpmtm_* table, no core API; table name from WPMTM_Schema::table(), not user input; value bound via prepare().
+				$wpdb->prepare( "SELECT * FROM {$table} WHERE section_id = %d AND round = %d ORDER BY round ASC, board ASC", $section_id, $round ) // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table name from WPMTM_Schema::table(), not user input.
 			);
 		}
 
-		return $wpdb->get_results(
-			$wpdb->prepare( "SELECT * FROM {$table} WHERE section_id = %d ORDER BY round ASC, board ASC", $section_id )
+		return $wpdb->get_results( // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, PluginCheck.Security.DirectDB.UnescapedDBParameter -- custom wpmtm_* table, no core API; table name from WPMTM_Schema::table(), not user input; value bound via prepare().
+			$wpdb->prepare( "SELECT * FROM {$table} WHERE section_id = %d ORDER BY round ASC, board ASC", $section_id ) // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table name from WPMTM_Schema::table(), not user input.
 		);
 	}
 
@@ -152,9 +146,9 @@ class WPMTM_Repository {
 		$byes_table    = WPMTM_Schema::table( 'byes' );
 		$players_table = WPMTM_Schema::table( 'players' );
 
-		return $wpdb->get_results(
+		return $wpdb->get_results( // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, PluginCheck.Security.DirectDB.UnescapedDBParameter -- custom wpmtm_* table, no core API; table name from WPMTM_Schema::table(), not user input; value bound via prepare().
 			$wpdb->prepare(
-				"SELECT b.* FROM {$byes_table} b INNER JOIN {$players_table} p ON p.id = b.player_id WHERE p.section_id = %d ORDER BY b.round ASC",
+				"SELECT b.* FROM {$byes_table} b INNER JOIN {$players_table} p ON p.id = b.player_id WHERE p.section_id = %d ORDER BY b.round ASC", // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table name from WPMTM_Schema::table(), not user input.
 				$section_id
 			)
 		);
@@ -179,9 +173,66 @@ class WPMTM_Repository {
 			SELECT b.round FROM {$byes_table} b INNER JOIN {$players_table} p ON p.id = b.player_id WHERE p.section_id = %d
 			ORDER BY round ASC";
 
-		$rows = $wpdb->get_col( $wpdb->prepare( $sql, $section_id, $section_id ) ); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared -- table names are hardcoded constants above, not user input; both %d placeholders are bound via prepare().
+		$rows = $wpdb->get_col( $wpdb->prepare( $sql, $section_id, $section_id ) ); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared, WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, PluginCheck.Security.DirectDB.UnescapedDBParameter -- table names are hardcoded constants above, not user input; both %d placeholders are bound via prepare().
 
 		return array_map( 'intval', $rows );
+	}
+
+	/**
+	 * rounds_with_results() batched across many sections in one query
+	 * (WHERE section_id IN (...), following the batching pattern in
+	 * delete_tournament_cascade()), instead of one query pair per section.
+	 * Used by WPMTM_Wizard::build_state() (docs/SPEC.md, "Decisions
+	 * (2026-07-16, wizard N+1 queries)"), which previously called
+	 * count_players() and rounds_with_results() once per section on every
+	 * admin page load while guided setup is active - 2N queries for N
+	 * sections.
+	 *
+	 * @param array $section_ids Section ids.
+	 * @return array section_id => int[] of distinct round numbers with at
+	 *               least one game or bye recorded, sorted ascending.
+	 *               Every requested section id is present in the result
+	 *               (an empty array for a section with no results yet).
+	 */
+	public static function rounds_with_results_by_sections( array $section_ids ) {
+		$section_ids = array_values( array_unique( array_map( 'intval', $section_ids ) ) );
+
+		$results = array();
+		foreach ( $section_ids as $id ) {
+			$results[ $id ] = array();
+		}
+		if ( empty( $section_ids ) ) {
+			return $results;
+		}
+
+		global $wpdb;
+		$games_table   = WPMTM_Schema::table( 'games' );
+		$byes_table    = WPMTM_Schema::table( 'byes' );
+		$players_table = WPMTM_Schema::table( 'players' );
+
+		$placeholders = implode( ',', array_fill( 0, count( $section_ids ), '%d' ) );
+
+		$sql = "SELECT section_id, round FROM {$games_table} WHERE section_id IN ({$placeholders})
+			UNION
+			SELECT p.section_id AS section_id, b.round AS round FROM {$byes_table} b INNER JOIN {$players_table} p ON p.id = b.player_id WHERE p.section_id IN ({$placeholders})";
+
+		$rows = $wpdb->get_results( $wpdb->prepare( $sql, array_merge( $section_ids, $section_ids ) ) ); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared, WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, PluginCheck.Security.DirectDB.UnescapedDBParameter -- placeholders built above, values bound via prepare().
+
+		foreach ( $rows as $row ) {
+			$sid = (int) $row->section_id;
+			if ( ! isset( $results[ $sid ] ) ) {
+				$results[ $sid ] = array();
+			}
+			$results[ $sid ][] = (int) $row->round;
+		}
+
+		foreach ( $results as $sid => $rounds ) {
+			$rounds = array_values( array_unique( $rounds ) );
+			sort( $rounds );
+			$results[ $sid ] = $rounds;
+		}
+
+		return $results;
 	}
 
 	/**
@@ -208,15 +259,15 @@ class WPMTM_Repository {
 		$byes_table    = WPMTM_Schema::table( 'byes' );
 		$players_table = WPMTM_Schema::table( 'players' );
 
-		$wpdb->query( 'START TRANSACTION' );
+		$wpdb->query( 'START TRANSACTION' ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- static SQL, no user input.
 
-		$ok = false !== $wpdb->query(
-			$wpdb->prepare( "DELETE FROM {$games_table} WHERE section_id = %d AND round = %d", $section_id, $round )
+		$ok = false !== $wpdb->query( // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, PluginCheck.Security.DirectDB.UnescapedDBParameter -- custom wpmtm_* table, no core API; table name from WPMTM_Schema::table(), not user input; value bound via prepare().
+			$wpdb->prepare( "DELETE FROM {$games_table} WHERE section_id = %d AND round = %d", $section_id, $round ) // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table name from WPMTM_Schema::table(), not user input.
 		);
 
-		$ok = $ok && false !== $wpdb->query(
+		$ok = $ok && false !== $wpdb->query( // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, PluginCheck.Security.DirectDB.UnescapedDBParameter -- custom wpmtm_* table, no core API; table name from WPMTM_Schema::table(), not user input; value bound via prepare().
 			$wpdb->prepare(
-				"DELETE b FROM {$byes_table} b INNER JOIN {$players_table} p ON p.id = b.player_id WHERE p.section_id = %d AND b.round = %d",
+				"DELETE b FROM {$byes_table} b INNER JOIN {$players_table} p ON p.id = b.player_id WHERE p.section_id = %d AND b.round = %d", // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table name from WPMTM_Schema::table(), not user input.
 				$section_id,
 				$round
 			)
@@ -224,7 +275,7 @@ class WPMTM_Repository {
 
 		if ( $ok ) {
 			foreach ( $boards as $board ) {
-				$result = $wpdb->insert(
+				$result = $wpdb->insert( // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery -- custom wpmtm_* table, no core API; $wpdb->update()/delete()/insert() escape values internally.
 					$games_table,
 					array(
 						'section_id'      => $section_id,
@@ -245,7 +296,7 @@ class WPMTM_Repository {
 
 		if ( $ok ) {
 			foreach ( $byes as $bye ) {
-				$result = $wpdb->insert(
+				$result = $wpdb->insert( // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery -- custom wpmtm_* table, no core API; $wpdb->update()/delete()/insert() escape values internally.
 					$byes_table,
 					array(
 						'player_id' => (int) $bye['player_id'],
@@ -262,11 +313,11 @@ class WPMTM_Repository {
 		}
 
 		if ( $ok ) {
-			$wpdb->query( 'COMMIT' );
+			$wpdb->query( 'COMMIT' ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- static SQL, no user input.
 			return true;
 		}
 
-		$wpdb->query( 'ROLLBACK' );
+		$wpdb->query( 'ROLLBACK' ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- static SQL, no user input.
 		return false;
 	}
 
@@ -356,7 +407,7 @@ class WPMTM_Repository {
 		);
 		$formats = array( '%d', '%s', '%d', '%s', '%s', '%s', '%s', '%s', '%s', '%d', '%d', '%s', '%s', '%s' );
 
-		$result = $wpdb->insert( $table, $data, $formats );
+		$result = $wpdb->insert( $table, $data, $formats ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery -- custom wpmtm_* table, no core API; $wpdb->update()/delete()/insert() escape values internally.
 		return false !== $result ? (int) $wpdb->insert_id : 0;
 	}
 
@@ -367,14 +418,14 @@ class WPMTM_Repository {
 	public static function next_sec_num( $tournament_id ) {
 		global $wpdb;
 		$table = WPMTM_Schema::table( 'sections' );
-		$max   = $wpdb->get_var( $wpdb->prepare( "SELECT MAX(sec_num) FROM {$table} WHERE tournament_id = %d", $tournament_id ) );
+		$max   = $wpdb->get_var( $wpdb->prepare( "SELECT MAX(sec_num) FROM {$table} WHERE tournament_id = %d", $tournament_id ) ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.PreparedSQL.InterpolatedNotPrepared, PluginCheck.Security.DirectDB.UnescapedDBParameter -- custom wpmtm_* table, no core API; table name from WPMTM_Schema::table(), not user input; value bound via prepare().
 		return $max ? ( (int) $max + 1 ) : 1;
 	}
 
 	public static function next_pair_num( $section_id ) {
 		global $wpdb;
 		$table = WPMTM_Schema::table( 'players' );
-		$max   = $wpdb->get_var( $wpdb->prepare( "SELECT MAX(pair_num) FROM {$table} WHERE section_id = %d", $section_id ) );
+		$max   = $wpdb->get_var( $wpdb->prepare( "SELECT MAX(pair_num) FROM {$table} WHERE section_id = %d", $section_id ) ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.PreparedSQL.InterpolatedNotPrepared, PluginCheck.Security.DirectDB.UnescapedDBParameter -- custom wpmtm_* table, no core API; table name from WPMTM_Schema::table(), not user input; value bound via prepare().
 		return $max ? ( (int) $max + 1 ) : 1;
 	}
 
@@ -394,7 +445,7 @@ class WPMTM_Repository {
 		$table = WPMTM_Schema::table( 'players' );
 		$value = null === $after_round_or_null ? null : (int) $after_round_or_null;
 
-		return false !== $wpdb->update(
+		return false !== $wpdb->update( // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- custom wpmtm_* table, no core API; $wpdb->update()/delete()/insert() escape values internally.
 			$table,
 			array( 'withdrawn_after_round' => $value ),
 			array( 'id' => (int) $player_id ),
@@ -415,7 +466,7 @@ class WPMTM_Repository {
 	 */
 	public static function set_tournament_locked( $tournament_id, $locked ) {
 		global $wpdb;
-		return false !== $wpdb->update(
+		return false !== $wpdb->update( // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- custom wpmtm_* table, no core API; $wpdb->update()/delete()/insert() escape values internally.
 			WPMTM_Schema::table( 'tournaments' ),
 			array(
 				'locked'     => $locked ? 1 : 0,
@@ -438,15 +489,15 @@ class WPMTM_Repository {
 	/** Shared renumbering helper: reassigns 1..N in existing order. */
 	private static function renumber( $table, $filter_column, $filter_value, $order_column, $number_column ) {
 		global $wpdb;
-		$ids = $wpdb->get_col(
+		$ids = $wpdb->get_col( // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, PluginCheck.Security.DirectDB.UnescapedDBParameter -- custom wpmtm_* table, no core API; table name from WPMTM_Schema::table(), not user input; value bound via prepare().
 			$wpdb->prepare(
-				"SELECT id FROM {$table} WHERE {$filter_column} = %d ORDER BY {$order_column} ASC, id ASC", // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared -- column names are hardcoded by the two callers above, not user input.
+				"SELECT id FROM {$table} WHERE {$filter_column} = %d ORDER BY {$order_column} ASC, id ASC", // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared, WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- column names are hardcoded by the two callers above, not user input.
 				$filter_value
 			)
 		);
 		$n = 1;
 		foreach ( $ids as $id ) {
-			$wpdb->update( $table, array( $number_column => $n ), array( 'id' => (int) $id ), array( '%d' ), array( '%d' ) );
+			$wpdb->update( $table, array( $number_column => $n ), array( 'id' => (int) $id ), array( '%d' ), array( '%d' ) ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- custom wpmtm_* table, no core API; $wpdb->update()/delete()/insert() escape values internally.
 			++$n;
 		}
 	}
@@ -463,16 +514,16 @@ class WPMTM_Repository {
 		$games_table   = WPMTM_Schema::table( 'games' );
 		$byes_table    = WPMTM_Schema::table( 'byes' );
 
-		$wpdb->query(
+		$wpdb->query( // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, PluginCheck.Security.DirectDB.UnescapedDBParameter -- custom wpmtm_* table, no core API; table name from WPMTM_Schema::table(), not user input; value bound via prepare().
 			$wpdb->prepare(
-				"DELETE FROM {$games_table} WHERE section_id = %d AND (white_player_id = %d OR black_player_id = %d)",
+				"DELETE FROM {$games_table} WHERE section_id = %d AND (white_player_id = %d OR black_player_id = %d)", // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table name from WPMTM_Schema::table(), not user input.
 				$section_id,
 				$player_id,
 				$player_id
 			)
 		);
-		$wpdb->delete( $byes_table, array( 'player_id' => $player_id ), array( '%d' ) );
-		$wpdb->delete( $players_table, array( 'id' => $player_id, 'section_id' => $section_id ), array( '%d', '%d' ) );
+		$wpdb->delete( $byes_table, array( 'player_id' => $player_id ), array( '%d' ) ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- custom wpmtm_* table, no core API; $wpdb->update()/delete()/insert() escape values internally.
+		$wpdb->delete( $players_table, array( 'id' => $player_id, 'section_id' => $section_id ), array( '%d', '%d' ) ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- custom wpmtm_* table, no core API; $wpdb->update()/delete()/insert() escape values internally.
 	}
 
 	public static function delete_section_cascade( $section_id, $tournament_id ) {
@@ -484,20 +535,20 @@ class WPMTM_Repository {
 		$games_table    = WPMTM_Schema::table( 'games' );
 		$byes_table     = WPMTM_Schema::table( 'byes' );
 
-		$exists = $wpdb->get_var( $wpdb->prepare( "SELECT id FROM {$sections_table} WHERE id = %d AND tournament_id = %d", $section_id, $tournament_id ) );
+		$exists = $wpdb->get_var( $wpdb->prepare( "SELECT id FROM {$sections_table} WHERE id = %d AND tournament_id = %d", $section_id, $tournament_id ) ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.PreparedSQL.InterpolatedNotPrepared, PluginCheck.Security.DirectDB.UnescapedDBParameter -- custom wpmtm_* table, no core API; table name from WPMTM_Schema::table(), not user input; value bound via prepare().
 		if ( ! $exists ) {
 			return;
 		}
 
-		$player_ids = $wpdb->get_col( $wpdb->prepare( "SELECT id FROM {$players_table} WHERE section_id = %d", $section_id ) );
+		$player_ids = $wpdb->get_col( $wpdb->prepare( "SELECT id FROM {$players_table} WHERE section_id = %d", $section_id ) ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.PreparedSQL.InterpolatedNotPrepared, PluginCheck.Security.DirectDB.UnescapedDBParameter -- custom wpmtm_* table, no core API; table name from WPMTM_Schema::table(), not user input; value bound via prepare().
 		if ( $player_ids ) {
 			$placeholders = implode( ',', array_fill( 0, count( $player_ids ), '%d' ) );
-			$wpdb->query( $wpdb->prepare( "DELETE FROM {$byes_table} WHERE player_id IN ({$placeholders})", $player_ids ) ); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared -- placeholders built above, values bound via prepare().
+			$wpdb->query( $wpdb->prepare( "DELETE FROM {$byes_table} WHERE player_id IN ({$placeholders})", $player_ids ) ); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared, WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, PluginCheck.Security.DirectDB.UnescapedDBParameter, WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.PreparedSQLPlaceholders.UnfinishedPrepare -- placeholders built above, values bound via prepare().; custom wpmtm_* table, no core API; placeholders built above match count(), values bound via prepare().
 		}
 
-		$wpdb->delete( $games_table, array( 'section_id' => $section_id ), array( '%d' ) );
-		$wpdb->delete( $players_table, array( 'section_id' => $section_id ), array( '%d' ) );
-		$wpdb->delete( $sections_table, array( 'id' => $section_id ), array( '%d' ) );
+		$wpdb->delete( $games_table, array( 'section_id' => $section_id ), array( '%d' ) ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- custom wpmtm_* table, no core API; $wpdb->update()/delete()/insert() escape values internally.
+		$wpdb->delete( $players_table, array( 'section_id' => $section_id ), array( '%d' ) ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- custom wpmtm_* table, no core API; $wpdb->update()/delete()/insert() escape values internally.
+		$wpdb->delete( $sections_table, array( 'id' => $section_id ), array( '%d' ) ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- custom wpmtm_* table, no core API; $wpdb->update()/delete()/insert() escape values internally.
 	}
 
 	/**
@@ -512,30 +563,36 @@ class WPMTM_Repository {
 		global $wpdb;
 		$tournament_id = (int) $tournament_id;
 
+		// The "TD check last ran" timestamp (docs/SPEC.md, 2026-07-16, TD
+		// check timestamp) is a per-tournament option, not a schema column,
+		// so it needs its own cleanup here - a dropped tournament id must
+		// never leave a wpmtm_td_check_{id} option behind.
+		delete_option( 'wpmtm_td_check_' . $tournament_id );
+
 		$sections_table = WPMTM_Schema::table( 'sections' );
 		$players_table  = WPMTM_Schema::table( 'players' );
 		$games_table    = WPMTM_Schema::table( 'games' );
 		$byes_table     = WPMTM_Schema::table( 'byes' );
 
-		$section_ids = $wpdb->get_col( $wpdb->prepare( "SELECT id FROM {$sections_table} WHERE tournament_id = %d", $tournament_id ) );
+		$section_ids = $wpdb->get_col( $wpdb->prepare( "SELECT id FROM {$sections_table} WHERE tournament_id = %d", $tournament_id ) ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.PreparedSQL.InterpolatedNotPrepared, PluginCheck.Security.DirectDB.UnescapedDBParameter -- custom wpmtm_* table, no core API; table name from WPMTM_Schema::table(), not user input; value bound via prepare().
 		if ( ! $section_ids ) {
-			$wpdb->delete( WPMTM_Schema::table( 'tournaments' ), array( 'id' => $tournament_id ), array( '%d' ) );
+			$wpdb->delete( WPMTM_Schema::table( 'tournaments' ), array( 'id' => $tournament_id ), array( '%d' ) ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- custom wpmtm_* table, no core API; $wpdb->update()/delete()/insert() escape values internally.
 			return;
 		}
 
 		$section_placeholders = implode( ',', array_fill( 0, count( $section_ids ), '%d' ) );
 
-		$player_ids = $wpdb->get_col( $wpdb->prepare( "SELECT id FROM {$players_table} WHERE section_id IN ({$section_placeholders})", $section_ids ) ); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared -- placeholders built above, values bound via prepare().
+		$player_ids = $wpdb->get_col( $wpdb->prepare( "SELECT id FROM {$players_table} WHERE section_id IN ({$section_placeholders})", $section_ids ) ); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared, WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, PluginCheck.Security.DirectDB.UnescapedDBParameter, WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.PreparedSQLPlaceholders.UnfinishedPrepare -- placeholders built above, values bound via prepare().; custom wpmtm_* table, no core API; placeholders built above match count(), values bound via prepare().
 
 		if ( $player_ids ) {
 			$player_placeholders = implode( ',', array_fill( 0, count( $player_ids ), '%d' ) );
-			$wpdb->query( $wpdb->prepare( "DELETE FROM {$byes_table} WHERE player_id IN ({$player_placeholders})", $player_ids ) ); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared -- placeholders built above, values bound via prepare().
+			$wpdb->query( $wpdb->prepare( "DELETE FROM {$byes_table} WHERE player_id IN ({$player_placeholders})", $player_ids ) ); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared, WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, PluginCheck.Security.DirectDB.UnescapedDBParameter, WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.PreparedSQLPlaceholders.UnfinishedPrepare -- placeholders built above, values bound via prepare().; custom wpmtm_* table, no core API; placeholders built above match count(), values bound via prepare().
 		}
 
-		$wpdb->query( $wpdb->prepare( "DELETE FROM {$games_table} WHERE section_id IN ({$section_placeholders})", $section_ids ) ); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared -- placeholders built above, values bound via prepare().
-		$wpdb->query( $wpdb->prepare( "DELETE FROM {$players_table} WHERE section_id IN ({$section_placeholders})", $section_ids ) ); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared -- placeholders built above, values bound via prepare().
-		$wpdb->query( $wpdb->prepare( "DELETE FROM {$sections_table} WHERE id IN ({$section_placeholders})", $section_ids ) ); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared -- placeholders built above, values bound via prepare().
+		$wpdb->query( $wpdb->prepare( "DELETE FROM {$games_table} WHERE section_id IN ({$section_placeholders})", $section_ids ) ); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared, WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, PluginCheck.Security.DirectDB.UnescapedDBParameter, WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.PreparedSQLPlaceholders.UnfinishedPrepare -- placeholders built above, values bound via prepare().; custom wpmtm_* table, no core API; placeholders built above match count(), values bound via prepare().
+		$wpdb->query( $wpdb->prepare( "DELETE FROM {$players_table} WHERE section_id IN ({$section_placeholders})", $section_ids ) ); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared, WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, PluginCheck.Security.DirectDB.UnescapedDBParameter, WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.PreparedSQLPlaceholders.UnfinishedPrepare -- placeholders built above, values bound via prepare().; custom wpmtm_* table, no core API; placeholders built above match count(), values bound via prepare().
+		$wpdb->query( $wpdb->prepare( "DELETE FROM {$sections_table} WHERE id IN ({$section_placeholders})", $section_ids ) ); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared, WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, PluginCheck.Security.DirectDB.UnescapedDBParameter, WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.PreparedSQLPlaceholders.UnfinishedPrepare -- placeholders built above, values bound via prepare().; custom wpmtm_* table, no core API; placeholders built above match count(), values bound via prepare().
 
-		$wpdb->delete( WPMTM_Schema::table( 'tournaments' ), array( 'id' => $tournament_id ), array( '%d' ) );
+		$wpdb->delete( WPMTM_Schema::table( 'tournaments' ), array( 'id' => $tournament_id ), array( '%d' ) ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- custom wpmtm_* table, no core API; $wpdb->update()/delete()/insert() escape values internally.
 	}
 }

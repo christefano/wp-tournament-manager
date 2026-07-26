@@ -41,12 +41,12 @@ class WPMTM_Scoring {
 
 	/**
 	 * Maps a wpmtm_games.result value to the round-token result letter and
-	 * color each side gets. This is a deliberate mirror of
-	 * WPMTM_Schema::RESULT_TOKEN_MAP - that copy is the DBF/export source of
-	 * truth, this one lets the scoring engine stay a pure class with no
-	 * WordPress dependency (required so tests/run-tests.php can cover it).
-	 * The two must be kept in sync; there is no third result-to-token
-	 * mapping anywhere else in the codebase.
+	 * color each side gets. This is the ONLY result-to-token mapping in the
+	 * codebase: the scoring engine and the export builder both read this
+	 * constant, and it lives here (a pure class with no WordPress
+	 * dependency) so tests/run-tests.php can cover it. A duplicate copy
+	 * once lived on WPMTM_Schema, never read by anything; it was removed
+	 * 2026-07-16 so no future edit can land on the wrong one.
 	 */
 	const RESULT_TOKEN_MAP = array(
 		'W'  => array(
@@ -192,7 +192,7 @@ class WPMTM_Scoring {
 
 	/**
 	 * Standings sorted by score desc, then Modified Median desc, Solkoff
-	 * desc, Cumulative desc, Cumulative of Opponents desc (US Chess 34E,
+	 * desc, Cumulative desc, Cumulative of Opponents desc (USCF 34E,
 	 * via WPMTM_Tiebreaks), then rating desc (blank/non-numeric ratings
 	 * last), then name asc.
 	 *
@@ -236,6 +236,68 @@ class WPMTM_Scoring {
 		usort( $rows, array( __CLASS__, 'compare_standings_rows' ) );
 
 		return $rows;
+	}
+
+	/**
+	 * Standard competition ranking ("1224" style) for standings() output:
+	 * ties share a rank and the next distinct value jumps to the count of
+	 * players ahead of it (1, 1, 3, 3, 5), rather than numbering every row
+	 * 1, 2, 3, 4... regardless of ties. Real chess tiebreaks stop at
+	 * Cumulative of Opposition (USCF rule 34E); compare_standings_rows()
+	 * above then also sorts by rating and name so the display has a stable
+	 * total order, but rating and name are not real tiebreaks, so two rows
+	 * differing only in those must still share a rank here.
+	 *
+	 * $section_complete controls what makes two rows "tied" (docs/SPEC.md,
+	 * "Decisions (2026-07-18, rank by score until complete)"): tiebreaks
+	 * exist to settle final placement for prizes, so mid-tournament they
+	 * are noise (a "leader" after round 1 often just has the single
+	 * strongest opponent so far). When false, a row shares the previous
+	 * row's rank whenever its 'score' alone matches - the tiebreak columns
+	 * still display, but do not move the rank number. When true (the
+	 * section has every round entered), a row shares the previous row's
+	 * rank only when its full (score, modified_median, solkoff,
+	 * cumulative, cumulative_opp) tuple is EXACTLY equal to the previous
+	 * row's, same as before this change.
+	 *
+	 * Pure and unit-testable on its own (tests/scoring-tests.php); the
+	 * caller is expected to pass standings()'s own sorted output - passing
+	 * an arbitrary order would compare rows that are not actually adjacent
+	 * in finishing order and produce a meaningless rank sequence.
+	 *
+	 * @param array $standings        Rows from standings() (or the same
+	 *                                 shape), already sorted by
+	 *                                 compare_standings_rows().
+	 * @param bool  $section_complete Whether every round 1..tot_rnds has
+	 *                                 results for this section (see
+	 *                                 WPMTM_Wizard::build_state() /
+	 *                                 WPMTM_Repository::rounds_with_results()
+	 *                                 for the definition this must match).
+	 * @return array Parallel array of 1-based rank integers, one per row.
+	 */
+	public static function ranks_for( array $standings, $section_complete ) {
+		$tie_fields = $section_complete
+			? array( 'score', 'modified_median', 'solkoff', 'cumulative', 'cumulative_opp' )
+			: array( 'score' );
+		$ranks      = array();
+		$prev_tuple = null;
+		$rank       = 0;
+
+		foreach ( $standings as $i => $row ) {
+			$tuple = array();
+			foreach ( $tie_fields as $field ) {
+				$tuple[] = isset( $row[ $field ] ) ? (float) $row[ $field ] : 0.0;
+			}
+
+			if ( null === $prev_tuple || $tuple !== $prev_tuple ) {
+				$rank = $i + 1;
+			}
+
+			$ranks[]    = $rank;
+			$prev_tuple = $tuple;
+		}
+
+		return $ranks;
 	}
 
 	/**

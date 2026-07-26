@@ -25,11 +25,21 @@ trait WPMTM_Admin_Shared {
 		}
 	}
 
-	protected function set_notice( $type, $message ) {
+	/**
+	 * @param bool $is_html Set true only when $message was built by the
+	 *                      caller with its own trusted markup already
+	 *                      escaped piece-by-piece (e.g. a section-names
+	 *                      list wrapped in an <a> back to the sections
+	 *                      editor) - render_notices() then uses
+	 *                      wp_kses_post() instead of esc_html() so that
+	 *                      markup survives. Every other caller passes
+	 *                      plain text and leaves this false.
+	 */
+	protected function set_notice( $type, $message, $is_html = false ) {
 		$key      = 'wpmtm_notice_' . get_current_user_id();
 		$notices  = get_transient( $key );
 		$notices  = is_array( $notices ) ? $notices : array();
-		$notices[] = array( 'type' => $type, 'message' => $message );
+		$notices[] = array( 'type' => $type, 'message' => $message, 'is_html' => $is_html );
 		set_transient( $key, $notices, 60 );
 	}
 
@@ -44,10 +54,13 @@ trait WPMTM_Admin_Shared {
 			if ( ! is_array( $notice ) || ! isset( $notice['type'], $notice['message'] ) ) {
 				continue;
 			}
+			$message = ! empty( $notice['is_html'] )
+				? wp_kses_post( $notice['message'] )
+				: esc_html( $notice['message'] );
 			printf(
 				'<div class="notice notice-%1$s is-dismissible"><p>%2$s</p></div>',
 				esc_attr( $notice['type'] ),
-				esc_html( $notice['message'] )
+				$message // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- already run through wp_kses_post()/esc_html() above.
 			);
 		}
 	}

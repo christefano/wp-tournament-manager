@@ -23,7 +23,7 @@ if ( ! defined( 'ABSPATH' ) ) {
  *   pure classes (WPMTM_USCF_Validator, WPMTM_ETR_Import's parse layer);
  *   the WP layer's own strings (labels, summaries, errors) are translated.
  * - get_member() / get_affiliate() (thin wp_remote_get wrappers with a
- *   15-minute transient cache), the validate_*() combinators, and the two
+ *   1-day transient cache), the validate_*() combinators, and the two
  *   admin-ajax handlers are the WordPress layer, live-verified rather than
  *   unit-tested.
  */
@@ -32,11 +32,17 @@ class WPMTM_USCF_Status {
 	const API_BASE = 'https://ratings-api.uschess.org/api/v1';
 
 	/**
-	 * Transient lifetime for cached API responses, in seconds. Short (15
-	 * minutes) on purpose: a TD who fixes a membership at US Chess can
-	 * re-validate shortly after without waiting out a long cache.
+	 * Transient lifetime for cached API responses, in seconds. A full day
+	 * on purpose (docs/SPEC.md, "Decisions (2026-07-16, USCF API traffic
+	 * reduction)"): membership, TD certification, Safe Play, and affiliate
+	 * data change rarely, and the MUIR API v1 is officially unsupported by
+	 * USCF, so Tournament Manager deliberately keeps its call volume
+	 * low. The three human-initiated paths that need a fresher answer than
+	 * a day-old cache can give (ajax_validate_players(), ajax_validate_tds(),
+	 * and the DBF export gate) pass $force = true to bypass this cache
+	 * outright rather than shortening it for everyone.
 	 */
-	const CACHE_TTL = 900;
+	const CACHE_TTL = DAY_IN_SECONDS;
 
 	/**
 	 * Days past the through-date inside which a passing expiration still
@@ -79,6 +85,47 @@ class WPMTM_USCF_Status {
 	public static function sanitize_member_id( $id ) {
 		$id = trim( (string) $id );
 		return preg_match( '/^\d{1,10}$/', $id ) ? $id : '';
+	}
+
+	/**
+	 * Normalizes a REGISTRANT-ENTERED USCF member-ID value that may be a
+	 * bare ID or a pasted USCF profile URL (docs/SPEC.md, "Decisions
+	 * (2026-07-16, URL-form USCF IDs)"). ETECF's own field help text tells
+	 * registrants they may enter either: "Enter your USCF member ID or the
+	 * full URL to your USCF profile at ratings.uschess.org." Before this,
+	 * a pasted URL sanitized to '' via sanitize_member_id() and every
+	 * downstream check silently skipped it.
+	 *
+	 * Deliberately narrow: this recognizes only a bare digit string or a
+	 * ratings.uschess.org/player/{id} URL (with or without an http(s)
+	 * scheme, with or without a leading www., an optional trailing slash,
+	 * and an optional query string or #fragment after the id) - it never
+	 * scrapes digits out of arbitrary text. "Need New ID" (no digits, no
+	 * recognized URL) and an unrelated URL that happens to contain digits
+	 * both return '', the same as before. Callers should still pass the
+	 * result through sanitize_member_id() (normalize first, then
+	 * sanitize) - sanitize_member_id() itself stays untouched, since it is
+	 * also used for TD IDs, the affiliate check, and CLI args, none of
+	 * which should ever accept a URL.
+	 *
+	 * @param string $raw Raw, registrant-entered value.
+	 * @return string Digits-only member ID, or '' when nothing recognized.
+	 */
+	public static function normalize_member_id_input( $raw ) {
+		$raw = trim( (string) $raw );
+		if ( '' === $raw ) {
+			return '';
+		}
+
+		if ( preg_match( '/^\d{1,10}$/', $raw ) ) {
+			return $raw;
+		}
+
+		if ( preg_match( '~^(?:https?://)?(?:www\.)?ratings\.uschess\.org/player/(\d{1,10})(?:[/?#].*)?$~i', $raw, $matches ) ) {
+			return $matches[1];
+		}
+
+		return '';
 	}
 
 	/**
@@ -143,7 +190,7 @@ class WPMTM_USCF_Status {
 
 		if ( 'Active' !== $row['status'] ) {
 			if ( 'None' === $row['status'] ) {
-				$row['reason'] = 'Not a current US Chess member';
+				$row['reason'] = 'Not a current USCF member';
 			} elseif ( 'Expired' === $row['status'] ) {
 				$row['reason'] = 'Expired' . ( '' !== $expiration ? ' ' . $expiration : '' );
 			} elseif ( '' === $row['status'] ) {
@@ -265,7 +312,7 @@ class WPMTM_USCF_Status {
 
 		if ( 'Active' !== $row['status'] ) {
 			if ( 'None' === $row['status'] ) {
-				$row['reason'] = 'Not a current US Chess affiliate';
+				$row['reason'] = 'Not a current USCF affiliate';
 			} elseif ( 'Expired' === $row['status'] ) {
 				$row['reason'] = 'Expired' . ( '' !== $expiration ? ' ' . $expiration : '' );
 			} elseif ( '' === $row['status'] ) {
@@ -312,6 +359,115 @@ class WPMTM_USCF_Status {
 		return preg_match( '/^\d{4}-\d{2}-\d{2}$/', $value ) ? $value : '';
 	}
 
+	/**
+	 * The "must be active through" date for a USCF status check
+	 * (docs/SPEC.md, v1.2 section 5, "Through-date resolves from the
+	 * tournament's last day, or the event end ..., or today when
+	 * neither is given"). Shared by the registration hook (tournament
+	 * end unknown - event end - today), the tournament-create TD check,
+	 * the DBF export TD gate, and WP-CLI, so every caller picks the same
+	 * date the same way. Pure: takes already-fetched date strings, does
+	 * no DB/API access itself.
+	 *
+	 * @param string $tournament_end Tournament's end_date, or ''.
+	 * @param string $event_end      Linked TEC event's end date, or ''.
+	 * @param string $today          Override for "today" (tests); blank
+	 *                                uses the real current UTC date.
+	 * @return string YYYY-MM-DD.
+	 */
+	public static function resolve_through_date( $tournament_end, $event_end, $today = '' ) {
+		$tournament_end = self::normalize_date( $tournament_end );
+		if ( '' !== $tournament_end ) {
+			return $tournament_end;
+		}
+		$event_end = self::normalize_date( $event_end );
+		if ( '' !== $event_end ) {
+			return $event_end;
+		}
+		$today = self::normalize_date( $today );
+		return '' !== $today ? $today : gmdate( 'Y-m-d' );
+	}
+
+	// -----------------------------------------------------------------
+	// Pure rating-mapping helpers (docs/SPEC.md, v1.2 section 2).
+	// -----------------------------------------------------------------
+
+	/**
+	 * Picks the rating to use from a MemberDetailDto's ratings[] array:
+	 * Regular (R) preferred, Quick (Q) as a fallback when no Regular
+	 * rating is on file. A provisional rating is used exactly like a
+	 * fully-established one - the isProvisional flag on each entry is
+	 * never consulted, which is what "provisional ratings ARE used when
+	 * they are the only rating on file" (docs/SPEC.md, owner decision
+	 * 2026-07-15) reduces to: whichever rating (of whatever provisional
+	 * status) exists for the preferred system wins. Blitz/online systems
+	 * are ignored - USCF DBF export only ever uses R or Q (see
+	 * WPMTM_USCF_Validator::check_r_system_and_trn_type()).
+	 *
+	 * @param array $ratings Decoded ratings[] entries, each with at least
+	 *                        'ratingSystem' and 'rating'.
+	 * @return int|null The rating to use, or null when neither an R nor
+	 *                    a Q rating is on file (never blanks good data -
+	 *                    the caller must leave the existing value alone).
+	 */
+	public static function pick_rating( array $ratings ) {
+		$regular = null;
+		$quick   = null;
+
+		foreach ( $ratings as $entry ) {
+			if ( ! is_array( $entry ) ) {
+				continue;
+			}
+			$system = isset( $entry['ratingSystem'] ) ? strtoupper( (string) $entry['ratingSystem'] ) : '';
+			$value  = isset( $entry['rating'] ) ? $entry['rating'] : null;
+			if ( null === $value || '' === $value || ! is_numeric( $value ) ) {
+				continue;
+			}
+			if ( 'R' === $system && null === $regular ) {
+				$regular = (int) $value;
+			} elseif ( 'Q' === $system && null === $quick ) {
+				$quick = (int) $value;
+			}
+		}
+
+		if ( null !== $regular ) {
+			return $regular;
+		}
+		return $quick;
+	}
+
+	/**
+	 * The rating-overwrite decision for the registration hook
+	 * (docs/SPEC.md, v1.2 section 2): the single pure function the
+	 * caller consults after resolving a member lookup, so
+	 * WPMTM_Registration_Check never re-derives this logic and every
+	 * skip/overwrite path is unit-tested here.
+	 *
+	 * Returns null (skip; leave the registrant's self-entered value
+	 * alone) when the setting is off, the lookup found nothing usable
+	 * (null - covers a 404, a network failure/UNKNOWN, or the caller
+	 * simply not having resolved data yet), or the member has no Regular
+	 * or Quick rating on file. Membership status (active/expired) is
+	 * deliberately not considered here - docs/SPEC.md ties the rating
+	 * overwrite only to "the lookup resolves and returns a rating", not
+	 * to membership being current.
+	 *
+	 * @param array|null $api         Decoded MemberDetailDto, or null when
+	 *                                 there is nothing usable to map from.
+	 * @param bool       $setting_on  wpmtm_options['verify_ratings'].
+	 * @return int|null The rating to write, or null to skip.
+	 */
+	public static function decide_rating_overwrite( $api, $setting_on ) {
+		if ( ! $setting_on ) {
+			return null;
+		}
+		if ( null === $api ) {
+			return null;
+		}
+		$ratings = isset( $api['ratings'] ) && is_array( $api['ratings'] ) ? $api['ratings'] : array();
+		return self::pick_rating( $ratings );
+	}
+
 	/** The last date still inside the WARN window after the through-date. */
 	protected static function warn_ceiling( $through ) {
 		$ts = strtotime( $through . ' +' . self::WARN_WINDOW_DAYS . ' days' );
@@ -331,34 +487,78 @@ class WPMTM_USCF_Status {
 	// -----------------------------------------------------------------
 
 	/**
+	 * Sentinel returned by fetch() (and passed through get_member() /
+	 * get_affiliate()) when $cache_only is true and nothing is cached yet.
+	 * Distinct from null ("could not reach the API"): this means the API
+	 * was never asked, on purpose, because the caller is a cache-only page
+	 * render (docs/SPEC.md, "Decisions (2026-07-16, USCF API traffic
+	 * reduction)"). validate_member() / validate_td() / validate_affiliate()
+	 * turn this into a not_checked_row() rather than an unreachable_row().
+	 */
+	const NOT_CACHED = 'wpmtm_uscf_not_cached';
+
+	/**
 	 * GET /members/{id}, cached. Returns:
 	 * - array( 'found' => true, 'data' => array )  on 200,
 	 * - array( 'found' => false, 'data' => null )  on 404 (cached too, as
 	 *   a miss marker),
 	 * - null on network error / any other HTTP status ("could not reach
-	 *   the API" - never reported as the entity being invalid).
+	 *   the API" - never reported as the entity being invalid),
+	 * - self::NOT_CACHED when $cache_only is true and there is no cache
+	 *   entry to read.
 	 *
-	 * @param string $id Already-sanitized member ID.
-	 * @return array|null
+	 * @param string $id          Already-sanitized member ID.
+	 * @param bool   $force       When true, bypasses the transient cache and
+	 *                             re-fetches (docs/SPEC.md v1.2 section 3: the
+	 *                             DBF export TD/Safe Play gate and the
+	 *                             on-demand "Validate players"/"Validate with USCF"
+	 *                             buttons re-check fresh so a cached stale
+	 *                             FAIL never blocks a TD who has since fixed
+	 *                             the problem, and a stale PASS never lets a
+	 *                             since-lapsed TD through). The fresh result
+	 *                             still refreshes the cache for the next
+	 *                             non-forced caller.
+	 * @param bool   $cache_only  When true, never makes an outbound API call:
+	 *                             a cache hit is returned as normal, a cache
+	 *                             miss returns self::NOT_CACHED instead of
+	 *                             fetching. Used by a plain page render
+	 *                             (docs/SPEC.md, 2026-07-16), which must
+	 *                             cause zero outbound HTTP requests to the
+	 *                             unsupported MUIR API. Mutually exclusive
+	 *                             with $force in practice (a forced caller
+	 *                             wants a fresh answer, not a cache-only one).
+	 * @return array|string|null
 	 */
-	public function get_member( $id ) {
-		return $this->fetch( '/members/' . rawurlencode( $id ), 'wpmtm_uscf_member_' . $id );
+	public function get_member( $id, $force = false, $cache_only = false ) {
+		return $this->fetch( '/members/' . rawurlencode( $id ), 'wpmtm_uscf_member_' . $id, $force, $cache_only );
 	}
 
 	/**
 	 * GET /affiliates/{id}, cached; same envelope as get_member().
 	 *
-	 * @param string $id Already-sanitized affiliate ID.
-	 * @return array|null
+	 * @param string $id          Already-sanitized affiliate ID.
+	 * @param bool   $force       See get_member().
+	 * @param bool   $cache_only  See get_member().
+	 * @return array|string|null
 	 */
-	public function get_affiliate( $id ) {
-		return $this->fetch( '/affiliates/' . rawurlencode( $id ), 'wpmtm_uscf_affiliate_' . $id );
+	public function get_affiliate( $id, $force = false, $cache_only = false ) {
+		return $this->fetch( '/affiliates/' . rawurlencode( $id ), 'wpmtm_uscf_affiliate_' . $id, $force, $cache_only );
 	}
 
-	protected function fetch( $path, $cache_key ) {
-		$cached = get_transient( $cache_key );
-		if ( is_array( $cached ) && array_key_exists( 'found', $cached ) ) {
-			return $cached;
+	protected function fetch( $path, $cache_key, $force = false, $cache_only = false ) {
+		if ( ! $force ) {
+			$cached = get_transient( $cache_key );
+			if ( is_array( $cached ) && array_key_exists( 'found', $cached ) ) {
+				return $cached;
+			}
+		}
+
+		if ( $cache_only ) {
+			// Cache-only callers (a page render, never an on-demand action)
+			// must never trigger an outbound API call on a cache miss - the
+			// MUIR API v1 is unsupported by USCF, so unnecessary traffic
+			// is a real risk (docs/SPEC.md, 2026-07-16).
+			return self::NOT_CACHED;
 		}
 
 		$response = wp_remote_get(
@@ -406,19 +606,26 @@ class WPMTM_USCF_Status {
 	/**
 	 * Full player/member check for one raw ID: sanitize, fetch, evaluate.
 	 * Blank and junk IDs FAIL without an API request; a network failure
-	 * yields verdict 'UNKNOWN' rather than reporting the member invalid.
+	 * yields verdict 'UNKNOWN' rather than reporting the member invalid;
+	 * a cache-only miss yields 'UNKNOWN' too, with a "not checked yet"
+	 * reason instead of "could not reach the API" (see not_checked_row()).
 	 *
 	 * @param string $id           Raw member ID.
 	 * @param string $through_date YYYY-MM-DD; blank falls back to today.
+	 * @param bool   $force        See get_member().
+	 * @param bool   $cache_only   See get_member().
 	 * @return array evaluate_member()'s shape plus a member_id key.
 	 */
-	public function validate_member( $id, $through_date ) {
+	public function validate_member( $id, $through_date, $force = false, $cache_only = false ) {
 		$row = $this->prepare_id_row( $id, 'member' );
 		if ( null !== $row ) {
 			return $row;
 		}
 		$clean = self::sanitize_member_id( $id );
-		$env   = $this->get_member( $clean );
+		$env   = $this->get_member( $clean, $force, $cache_only );
+		if ( self::NOT_CACHED === $env ) {
+			return $this->not_checked_row( $clean );
+		}
 		if ( null === $env ) {
 			return $this->unreachable_row( $clean );
 		}
@@ -433,15 +640,20 @@ class WPMTM_USCF_Status {
 	 *
 	 * @param string $id           Raw member ID.
 	 * @param string $through_date YYYY-MM-DD; blank falls back to today.
+	 * @param bool   $force        See get_member().
+	 * @param bool   $cache_only   See get_member().
 	 * @return array evaluate_td()'s shape plus a member_id key.
 	 */
-	public function validate_td( $id, $through_date ) {
+	public function validate_td( $id, $through_date, $force = false, $cache_only = false ) {
 		$row = $this->prepare_id_row( $id, 'member' );
 		if ( null !== $row ) {
 			return $row;
 		}
 		$clean = self::sanitize_member_id( $id );
-		$env   = $this->get_member( $clean );
+		$env   = $this->get_member( $clean, $force, $cache_only );
+		if ( self::NOT_CACHED === $env ) {
+			return $this->not_checked_row( $clean );
+		}
 		if ( null === $env ) {
 			return $this->unreachable_row( $clean );
 		}
@@ -455,11 +667,13 @@ class WPMTM_USCF_Status {
 	 *
 	 * @param string $id           Raw affiliate ID.
 	 * @param string $through_date YYYY-MM-DD; blank falls back to today.
+	 * @param bool   $force        See get_member().
+	 * @param bool   $cache_only   See get_member().
 	 * @return array evaluate_affiliate()'s shape plus a member_id key
 	 *               (the affiliate ID, kept under the same key so every
 	 *               row renders through the same client-side code).
 	 */
-	public function validate_affiliate( $id, $through_date ) {
+	public function validate_affiliate( $id, $through_date, $force = false, $cache_only = false ) {
 		$id = trim( (string) $id );
 		if ( '' === $id ) {
 			return $this->blank_id_row( __( 'No affiliate ID on file', 'wp-tournament-manager' ) );
@@ -468,7 +682,10 @@ class WPMTM_USCF_Status {
 		if ( '' === $clean ) {
 			return $this->blank_id_row( __( 'Affiliate ID is not valid', 'wp-tournament-manager' ), $id );
 		}
-		$env = $this->get_affiliate( $clean );
+		$env = $this->get_affiliate( $clean, $force, $cache_only );
+		if ( self::NOT_CACHED === $env ) {
+			return $this->not_checked_row( $clean );
+		}
 		if ( null === $env ) {
 			return $this->unreachable_row( $clean );
 		}
@@ -533,6 +750,31 @@ class WPMTM_USCF_Status {
 		);
 	}
 
+	/**
+	 * Cache-only-miss row: verdict UNKNOWN, same shape as unreachable_row()
+	 * (deliberately reusing the existing UNKNOWN/notice classification
+	 * rather than inventing a new verdict level - docs/SPEC.md, 2026-07-16),
+	 * but with an accurate "not checked yet" reason instead of implying an
+	 * API outage, plus a not_checked flag so callers that want to word a
+	 * finding differently (WPMTM_USCF_Validator::classify_export_td_verdict())
+	 * can tell the two apart without string-matching the reason text. Never
+	 * blocks anything and never reads as a failure - identical treatment to
+	 * an outage as far as every existing UNKNOWN-handling caller is
+	 * concerned.
+	 */
+	protected function not_checked_row( $id ) {
+		return array(
+			'verdict'     => 'UNKNOWN',
+			'reason'      => __( 'Not checked yet - will be checked fresh at export time', 'wp-tournament-manager' ),
+			'warn'        => '',
+			'name'        => '',
+			'status'      => '',
+			'expiration'  => '',
+			'member_id'   => $id,
+			'not_checked' => true,
+		);
+	}
+
 	// -----------------------------------------------------------------
 	// WordPress layer: front-end asset load for the wp-etr toolbar button.
 	// -----------------------------------------------------------------
@@ -585,7 +827,15 @@ class WPMTM_USCF_Status {
 	 * registrant of a wp-etr event against the USCF ratings API. Input:
 	 * event (post id), nonce ('wpmtm_validate_players_{event_id}', minted
 	 * by wp-etr's toolbar). Through-date: the TEC event's end date, else
-	 * today. Requires WPMTM_CAPABILITY plus edit_post on the event.
+	 * today. Requires WPMTM_Roles::user_can_manage_tournament() on the
+	 * event's linked tournament (WPMTM_CAPABILITY plus ownership for a
+	 * dedicated-role TD; administrators always pass).
+	 *
+	 * Always forces a fresh lookup (docs/SPEC.md, 2026-07-16): with a
+	 * 1-day cache, a cached answer here could be up to a day stale, and a
+	 * TD who just fixed a membership and clicks this button expects to see
+	 * the fix immediately, not "still failing, try again tomorrow". This
+	 * is a human-initiated, rare action, not a load concern.
 	 */
 	public function ajax_validate_players() {
 		$event_id = isset( $_POST['event'] ) ? absint( $_POST['event'] ) : 0;
@@ -594,7 +844,8 @@ class WPMTM_USCF_Status {
 		if ( ! $event_id || ! wp_verify_nonce( $nonce, 'wpmtm_validate_players_' . $event_id ) ) {
 			wp_send_json_error( array( 'message' => __( 'Security check failed. Reload the page and try again.', 'wp-tournament-manager' ) ), 403 );
 		}
-		if ( ! current_user_can( WPMTM_CAPABILITY ) || ! current_user_can( 'edit_post', $event_id ) ) {
+		$tournament = WPMTM_Repository::get_tournament_by_event( $event_id );
+		if ( ! $tournament || ! WPMTM_Roles::user_can_manage_tournament( $tournament ) ) {
 			wp_send_json_error( array( 'message' => __( 'You do not have permission to validate players for this event.', 'wp-tournament-manager' ) ), 403 );
 		}
 		if ( ! class_exists( '\Etr\Plugin' ) ) {
@@ -609,7 +860,15 @@ class WPMTM_USCF_Status {
 				if ( ! empty( $r['noshow'] ) ) {
 					continue; // same skip rule as the ETR roster import.
 				}
-				$result = $this->validate_member( isset( $r['uscf_id'] ) ? $r['uscf_id'] : '', $through );
+				// wp-etr's own build_sections() already display-normalizes a
+				// pasted profile URL to digits; normalize_member_id_input()
+				// runs again here anyway (idempotent on an already-clean
+				// digit string) so this path agrees with the registration
+				// check and the ETR roster import regardless of wp-etr's
+				// version or a manually-typed value - docs/SPEC.md,
+				// "Decisions (2026-07-16, URL-form USCF IDs)".
+				$raw_id = isset( $r['uscf_id'] ) ? $r['uscf_id'] : '';
+				$result = $this->validate_member( WPMTM_USCF_Status::normalize_member_id_input( $raw_id ), $through, true );
 				$rows[] = array(
 					'name'       => isset( $r['name'] ) ? (string) $r['name'] : '',
 					'member_id'  => '' !== $result['member_id'] ? $result['member_id'] : ( isset( $r['uscf_id'] ) ? (string) $r['uscf_id'] : '' ),
@@ -637,10 +896,20 @@ class WPMTM_USCF_Status {
 	 * and the 'wpmtm_validate_tds' nonce:
 	 * - context=settings (Settings page): manage_options; IDs straight
 	 *   from wpmtm_options; through-date today.
-	 * - context=tournament (tournament edit page): WPMTM_CAPABILITY;
-	 *   effective TD IDs (the per-tournament override when set, else the
-	 *   Settings default - the same resolution the USCF export uses);
-	 *   affiliate from Settings; through-date the tournament end date.
+	 * - context=tournament (tournament edit page): WPMTM_CAPABILITY; the
+	 *   tournament's OWN head_td_id/assistant_td_id ONLY, no Settings
+	 *   fallback (docs/SPEC.md, 2026-07-17, TD default removal) - a blank
+	 *   tournament field means that TD is genuinely absent for this
+	 *   tournament and reports through the blank-id row path; affiliate is
+	 *   the EFFECTIVE affiliate - the tournament's own if set, else Settings
+	 *   (docs/SPEC.md, 2026-07-18, per-tournament USCF affiliate ID) - a
+	 *   club-wide fallback, unlike the TD IDs; through-date the tournament
+	 *   end date.
+	 *
+	 * Always forces a fresh lookup for all three checks (docs/SPEC.md,
+	 * 2026-07-16): same reasoning as ajax_validate_players() above - with a
+	 * 1-day cache a stale cached FAIL would strand a TD who just fixed the
+	 * problem at USCF. Human-initiated and rare, not a load concern.
 	 */
 	public function ajax_validate_tds() {
 		$nonce   = isset( $_POST['nonce'] ) ? sanitize_text_field( wp_unslash( $_POST['nonce'] ) ) : '';
@@ -656,52 +925,109 @@ class WPMTM_USCF_Status {
 		$assistant = (string) $opts['assistant_td_id'];
 		$through   = current_time( 'Y-m-d' );
 
+		$tournament_id = 0;
+
 		if ( 'tournament' === $context ) {
-			if ( ! current_user_can( WPMTM_CAPABILITY ) ) {
-				wp_send_json_error( array( 'message' => __( 'You do not have permission to validate TDs.', 'wp-tournament-manager' ) ), 403 );
-			}
 			$tournament_id = isset( $_POST['tournament'] ) ? absint( $_POST['tournament'] ) : 0;
 			$tournament    = $tournament_id ? WPMTM_Repository::get_tournament( $tournament_id ) : null;
 			if ( ! $tournament ) {
 				wp_send_json_error( array( 'message' => __( 'Tournament not found.', 'wp-tournament-manager' ) ), 400 );
 			}
-			// Effective TD IDs: per-tournament override when set, else the
-			// Settings default - mirrors WPMTM_Export_Builder::build().
-			if ( '' !== trim( (string) $tournament->head_td_id ) ) {
-				$chief = (string) $tournament->head_td_id;
+			if ( ! WPMTM_Roles::user_can_manage_tournament( $tournament ) ) {
+				wp_send_json_error( array( 'message' => __( 'You do not have permission to validate TDs.', 'wp-tournament-manager' ) ), 403 );
 			}
-			if ( '' !== trim( (string) $tournament->assistant_td_id ) ) {
-				$assistant = (string) $tournament->assistant_td_id;
+			// Tournament's own TD IDs ONLY - no Settings fallback (docs/
+			// SPEC.md, 2026-07-17, TD default removal). A blank field here
+			// means that TD is genuinely absent for this tournament, which
+			// the blank-id row path below reports as missing rather than
+			// silently validating the club-wide Settings default.
+			$chief     = (string) $tournament->head_td_id;
+			$assistant = (string) $tournament->assistant_td_id;
+			// Per-tournament affiliate override with a club-wide fallback
+			// (docs/SPEC.md, 2026-07-18) - unlike chief/assistant above,
+			// this one intentionally falls back to Settings when blank.
+			$tournament_affiliate = trim( (string) $tournament->affiliate_id );
+			if ( '' !== $tournament_affiliate ) {
+				$affiliate = $tournament_affiliate;
 			}
-			$end = self::normalize_date( $tournament->end_date );
+			$end       = self::normalize_date( $tournament->end_date );
 			if ( '' !== $end ) {
 				$through = $end;
 			}
+			// Record that the check actually ran for this tournament (docs/SPEC.md,
+			// 2026-07-16, TD check timestamp) - independent of the
+			// get_member()/get_affiliate() transient cache above: this marks when
+			// the TD last ran the check, not when the cache was last filled, so it
+			// must keep advancing even on a cache-hit re-check.
+			self::record_td_check( $tournament_id );
 		} elseif ( ! current_user_can( 'manage_options' ) ) {
 			wp_send_json_error( array( 'message' => __( 'You do not have permission to validate TDs.', 'wp-tournament-manager' ) ), 403 );
 		}
 
 		$rows = array();
 
-		$affiliate_row          = $this->validate_affiliate( $affiliate, $through );
+		$affiliate_row          = $this->validate_affiliate( $affiliate, $through, true );
 		$affiliate_row['role']  = __( 'Affiliate', 'wp-tournament-manager' );
 		$rows[]                 = $affiliate_row;
 
-		$chief_row         = $this->validate_td( $chief, $through );
+		$chief_row         = $this->validate_td( $chief, $through, true );
 		$chief_row['role'] = __( 'Chief TD', 'wp-tournament-manager' );
 		$rows[]            = $chief_row;
 
 		if ( '' !== trim( $assistant ) ) {
-			$assistant_row         = $this->validate_td( $assistant, $through );
+			$assistant_row         = $this->validate_td( $assistant, $through, true );
 			$assistant_row['role'] = __( 'Assistant TD', 'wp-tournament-manager' );
 			$rows[]                = $assistant_row;
 		}
 
-		wp_send_json_success(
-			array(
-				'through' => $through,
-				'rows'    => $rows,
-			)
+		$response = array(
+			'through' => $through,
+			'rows'    => $rows,
+		);
+		if ( $tournament_id ) {
+			$response['last_checked_text'] = self::last_td_check_text( $tournament_id );
+		}
+
+		wp_send_json_success( $response );
+	}
+
+	/**
+	 * Per-tournament "TD check last ran" timestamp (docs/SPEC.md, 2026-07-16,
+	 * TD check timestamp). Stored with update_option() under a per-tournament
+	 * key rather than a schema column - this is presentation metadata, not
+	 * tournament data, and there is no natural place for a single nullable
+	 * column shared by every tournament row for something that is set post
+	 * hoc by an admin-ajax action. autoload is false: this is only ever read
+	 * on the single tournament edit page, never on every page load.
+	 *
+	 * @param int $tournament_id
+	 */
+	public static function record_td_check( $tournament_id ) {
+		update_option( 'wpmtm_td_check_' . (int) $tournament_id, current_time( 'timestamp' ), false ); // phpcs:ignore WordPress.DateTime.CurrentTimeTimestamp.Requested -- human_time_diff() below needs a Unix timestamp in the site's timezone, which is exactly what current_time('timestamp') returns.
+	}
+
+	/**
+	 * Human-readable "Last checked ... ago" string for the tournament edit
+	 * page (WPMTM_Admin::render_tournament_form()) and the AJAX response
+	 * above, so the two never drift out of sync. Site-timezone-aware: both
+	 * sides passed to human_time_diff() are current_time('timestamp')
+	 * values (record_td_check() stores one, and $to below is a fresh one) -
+	 * human_time_diff()'s own default for $to is raw time() (UTC), which
+	 * would misreport by exactly the site's UTC offset if left implicit,
+	 * so it is passed explicitly here.
+	 *
+	 * @param int $tournament_id
+	 * @return string Translated, human-readable text (not yet escaped).
+	 */
+	public static function last_td_check_text( $tournament_id ) {
+		$stored = get_option( 'wpmtm_td_check_' . (int) $tournament_id, 0 );
+		if ( ! $stored ) {
+			return __( 'Never checked', 'wp-tournament-manager' );
+		}
+		return sprintf(
+			/* translators: %s: human-readable relative time, e.g. "5 minutes" */
+			__( 'Last checked %s ago', 'wp-tournament-manager' ),
+			human_time_diff( (int) $stored, current_time( 'timestamp' ) ) // phpcs:ignore WordPress.DateTime.CurrentTimeTimestamp.Requested -- must match the current_time('timestamp') convention record_td_check() stores under, not raw time().
 		);
 	}
 

@@ -5,20 +5,18 @@ if ( ! defined( 'ABSPATH' ) ) {
 
 /**
  * Admin CRUD screens under the top-level "Tournament Manager" menu:
- * tournaments list, add/edit tournament, sections editor, and a per-section
- * players editor. Every state-changing request goes through admin-post.php,
- * is nonce-verified, and is gated on WPMTM_CAPABILITY. All output is
- * escaped at render time.
+ * tournaments list and the add/edit tournament form (name, dates, linked
+ * event, TD/affiliate IDs, and the lock/unlock control). Every
+ * state-changing request goes through admin-post.php, is nonce-verified,
+ * and is gated on WPMTM_CAPABILITY. All output is escaped at render time.
  *
  * The ETR roster-import surface (upload, preview, confirm) lives in
  * WPMTM_Admin_Import; this class only makes the two thin calls the edit
- * screen needs (render_import_box(), maybe_render_preview()).
- *
- * Sections and players are edited as a single bulk form per screen (a
- * repeater table): existing rows can be edited in place, new rows are added
- * client-side (assets/wpmtm-admin.js), and removing a row either drops an
- * unsaved row from the DOM or flags an existing row for server-side
- * deletion via a hidden "removed_*" field. One Save submits the whole set.
+ * screen needs (render_import_box(), maybe_render_preview()). The sections
+ * editor lives in WPMTM_Admin_Sections and the per-section players editor
+ * lives in WPMTM_Admin_Players, split out the same way and with the same
+ * nonce/capability/escaping discipline; this class calls into both from
+ * render_tournament_edit() below.
  */
 class WPMTM_Admin {
 
@@ -39,11 +37,10 @@ class WPMTM_Admin {
 		add_filter( 'plugin_action_links_' . WPMTM_PLUGIN_BASENAME, array( $this, 'add_plugin_action_links' ) );
 		add_filter( 'plugin_row_meta', array( $this, 'add_plugin_row_meta' ), 10, 2 );
 		add_action( 'admin_bar_menu', array( $this, 'add_new_tournament_menu' ), 90 );
+		add_filter( 'admin_title', array( $this, 'filter_admin_title' ), 10, 2 );
 
 		add_action( 'admin_post_wpmtm_save_tournament', array( $this, 'handle_save_tournament' ) );
 		add_action( 'admin_post_wpmtm_delete_tournament', array( $this, 'handle_delete_tournament' ) );
-		add_action( 'admin_post_wpmtm_save_sections', array( $this, 'handle_save_sections' ) );
-		add_action( 'admin_post_wpmtm_save_players', array( $this, 'handle_save_players' ) );
 		add_action( 'admin_post_wpmtm_toggle_lock', array( $this, 'handle_toggle_lock' ) );
 	}
 
@@ -52,13 +49,21 @@ class WPMTM_Admin {
 	// -----------------------------------------------------------------
 
 	public function register_menu() {
+		// Fixed position 81 (owner request, 2026-07-24): sits directly below
+		// WordPress' own "Settings" (80), with Event Registrations (82) and
+		// Tickets Extra Custom Fields (83) after it - deliberately anchored
+		// to WordPress core's own fixed Settings position, not to The
+		// Events Calendar or Event Tickets, so this ordering holds
+		// regardless of what position either of those plugins happens to
+		// register at.
 		add_menu_page(
 			__( 'Tournament Manager', 'wp-tournament-manager' ),
 			__( 'Tournament Manager', 'wp-tournament-manager' ),
 			WPMTM_CAPABILITY,
 			'wpmtm',
 			array( $this, 'render_tournaments_list' ),
-			'dashicons-awards'
+			'dashicons-awards',
+			81
 		);
 
 		add_submenu_page(
@@ -104,6 +109,23 @@ class WPMTM_Admin {
 		return $links;
 	}
 
+	/**
+	 * The 'wpmtm-edit' submenu is registered with a single static
+	 * page_title ("Add Tournament", register_menu() above), since
+	 * add_submenu_page() has no way to know at registration time whether a
+	 * given page load is the Add or Edit form - only render_tournament_edit()
+	 * knows that, from $_GET['id']. Without this filter the browser tab
+	 * (and the fallback title WordPress uses if a screen has no <h1>) always
+	 * read "Add Tournament" even while editing an existing tournament, out
+	 * of step with the page's own dynamic <h1> (render_tournament_form()).
+	 */
+	public function filter_admin_title( $admin_title, $title ) {
+		if ( isset( $_GET['page'] ) && 'wpmtm-edit' === $_GET['page'] && ! empty( $_GET['id'] ) ) { // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- read-only title text, no state change.
+			$admin_title = str_replace( $title, __( 'Edit Tournament', 'wp-tournament-manager' ), $admin_title );
+		}
+		return $admin_title;
+	}
+
 	public function add_new_tournament_menu( $wp_admin_bar ) {
 		if ( ! current_user_can( WPMTM_CAPABILITY ) ) {
 			return;
@@ -117,20 +139,22 @@ class WPMTM_Admin {
 	}
 
 	public function enqueue_assets() {
+		// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- read-only: gates asset enqueue by the current admin page slug, no state change.
 		if ( ! isset( $_GET['page'] ) || 0 !== strpos( sanitize_key( wp_unslash( $_GET['page'] ) ), 'wpmtm' ) ) {
 			return;
 		}
 		wp_enqueue_style( 'wpmtm-admin', WPMTM_PLUGIN_URL . 'assets/wpmtm-admin.css', array(), WPMTM_VERSION );
 		wp_enqueue_script( 'wpmtm-admin', WPMTM_PLUGIN_URL . 'assets/wpmtm-admin.js', array(), WPMTM_VERSION, true );
-		// Strings for the "Validate TDs" button (the Settings page and the
-		// tournament edit page - both pass the wpmtm page-prefix gate
-		// above); see assets/wpmtm-admin.js behavior 6 and
+		// Strings for the "Validate with USCF" button (renamed from
+		// "Validate TDs" 2026-07-18; the Settings page and the tournament
+		// edit page - both pass the wpmtm page-prefix gate above); see
+		// assets/wpmtm-admin.js behavior 6 and
 		// WPMTM_USCF_Status::ajax_validate_tds().
 		wp_localize_script(
 			'wpmtm-admin',
 			'wpmtmValidateTds',
 			array(
-				'checking'      => __( 'Checking...', 'wp-tournament-manager' ),
+				'validating'    => __( 'Validating with USCF...', 'wp-tournament-manager' ),
 				'requestFailed' => __( 'The validation request failed - try again.', 'wp-tournament-manager' ),
 				'colRole'       => __( 'Role', 'wp-tournament-manager' ),
 				'colUscfId'     => __( 'USCF ID', 'wp-tournament-manager' ),
@@ -153,17 +177,22 @@ class WPMTM_Admin {
 		$this->require_capability();
 
 		$tournaments = WPMTM_Repository::tournaments_with_counts();
+		if ( ! current_user_can( 'manage_options' ) ) {
+			$tournaments = array_values(
+				array_filter(
+					$tournaments,
+					array( 'WPMTM_Roles', 'user_can_manage_tournament' )
+				)
+			);
+		}
 		?>
 		<div class="wrap wpmtm-wrap">
 			<h1 class="wp-heading-inline"><?php esc_html_e( 'Tournament Manager', 'wp-tournament-manager' ); ?></h1>
 			<a href="<?php echo esc_url( admin_url( 'admin.php?page=wpmtm-edit' ) ); ?>" class="page-title-action"><?php esc_html_e( 'Add New', 'wp-tournament-manager' ); ?></a>
-			<?php if ( WPMTM_Wizard::instance()->is_active() ) : ?>
-				<a href="<?php echo esc_url( WPMTM_Wizard::instance()->stop_url() ); ?>" class="page-title-action"><?php esc_html_e( 'Exit guided setup', 'wp-tournament-manager' ); ?></a>
-			<?php else : ?>
-				<a href="<?php echo esc_url( WPMTM_Wizard::instance()->start_url() ); ?>" class="page-title-action"><?php esc_html_e( 'Start guided setup', 'wp-tournament-manager' ); ?></a>
-			<?php endif; ?>
+			<?php WPMTM_Wizard::instance()->render_show_guide_button( 'page-title-action' ); ?>
 			<hr class="wp-header-end">
 			<?php $this->render_admin_header(); ?>
+			<?php WPMTM_Wizard::instance()->render_guide_shown_notice(); ?>
 			<?php $this->render_notices(); ?>
 
 			<table class="wp-list-table widefat fixed striped">
@@ -206,7 +235,16 @@ class WPMTM_Admin {
 									<span class="wpmtm-badge"><?php esc_html_e( 'Unrated', 'wp-tournament-manager' ); ?></span>
 								<?php endif; ?>
 							</td>
-							<td><?php echo esc_html( ucfirst( $t->status ) ); ?></td>
+							<td>
+								<?php
+								$status = WPMTM_Wizard::instance()->list_status_for( $t );
+								if ( $status['url'] ) :
+									?>
+									<a href="<?php echo esc_url( $status['url'] ); ?>"><?php echo esc_html( $status['label'] ); ?></a>
+								<?php else : ?>
+									<?php echo esc_html( $status['label'] ); ?>
+								<?php endif; ?>
+							</td>
 							<td><?php echo esc_html( (int) $t->section_count ); ?></td>
 							<td><?php echo esc_html( (int) $t->player_count ); ?></td>
 							<td>
@@ -240,12 +278,17 @@ class WPMTM_Admin {
 	public function render_tournament_edit() {
 		$this->require_capability();
 
+		// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- read-only: absint()-cast id selects which tournament/section to render, no state change.
 		$tournament_id = isset( $_GET['id'] ) ? absint( $_GET['id'] ) : 0;
+		// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- read-only, see note above.
 		$section_id    = isset( $_GET['section_id'] ) ? absint( $_GET['section_id'] ) : 0;
 
 		$tournament = $tournament_id ? WPMTM_Repository::get_tournament( $tournament_id ) : null;
 		if ( $tournament_id && ! $tournament ) {
 			wp_die( esc_html__( 'Tournament not found.', 'wp-tournament-manager' ) );
+		}
+		if ( $tournament && ! WPMTM_Roles::user_can_manage_tournament( $tournament ) ) {
+			wp_die( esc_html__( 'You do not have permission to edit this tournament.', 'wp-tournament-manager' ) );
 		}
 
 		if ( $tournament && $section_id ) {
@@ -253,10 +296,11 @@ class WPMTM_Admin {
 			if ( ! $section || (int) $section->tournament_id !== $tournament_id ) {
 				wp_die( esc_html__( 'Section not found.', 'wp-tournament-manager' ) );
 			}
-			$this->render_players_editor( $tournament, $section );
+			WPMTM_Admin_Players::instance()->render_players_editor( $tournament, $section );
 			return;
 		}
 
+		// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- read-only: selects the ETR import preview render path from a pending transient, no state change.
 		if ( $tournament && isset( $_GET['wpmtm_etr_step'] ) && 'preview' === $_GET['wpmtm_etr_step'] ) {
 			if ( WPMTM_Admin_Import::instance()->maybe_render_preview( $tournament ) ) {
 				return;
@@ -266,7 +310,7 @@ class WPMTM_Admin {
 		$this->render_tournament_form( $tournament );
 
 		if ( $tournament ) {
-			$this->render_sections_editor( $tournament );
+			WPMTM_Admin_Sections::instance()->render_sections_editor( $tournament );
 			WPMTM_Admin_Import::instance()->render_import_box( $tournament );
 			WPMTM_Admin_Export::instance()->render_export_box( $tournament );
 		}
@@ -286,25 +330,64 @@ class WPMTM_Admin {
 		$zip           = $is_edit ? $tournament->zipcode : '';
 		$head_td       = $is_edit ? $tournament->head_td_id : '';
 		$assistant_td  = $is_edit ? $tournament->assistant_td_id : '';
+		$affiliate_id  = $is_edit ? $tournament->affiliate_id : '';
 		$send_x        = $is_edit ? (bool) $tournament->send_crosstable : false;
 		$show_photos   = $is_edit ? (bool) $tournament->show_photos : false;
 		?>
 		<div class="wrap wpmtm-wrap">
-			<h1><?php echo $is_edit ? esc_html__( 'Edit Tournament', 'wp-tournament-manager' ) : esc_html__( 'Add Tournament', 'wp-tournament-manager' ); ?></h1>
+			<h1 class="wp-heading-inline"><?php echo $is_edit ? esc_html__( 'Edit Tournament', 'wp-tournament-manager' ) : esc_html__( 'Add Tournament', 'wp-tournament-manager' ); ?></h1>
+			<?php
+			// The "Show setup guide" / "Exit setup guide" button is back next
+			// to the H1 here (2026-07-24, owner request, reversing 2026-07-22):
+			// the panel below now honors is_active() like every other surface,
+			// so once a TD exits the guide (from here, the admin bar, or the
+			// Tournaments list) it actually stays hidden on this page too,
+			// instead of unconditionally reappearing - and this button is the
+			// only way to bring it back without leaving the page.
+			WPMTM_Wizard::instance()->render_show_guide_button( 'page-title-action' );
+			?>
+			<?php
+			// The panel renders BEFORE <hr class="wp-header-end"> (2026-07-23,
+			// owner request): WordPress relocates every admin notice to just
+			// before that marker, so putting the panel ahead of it makes the
+			// setup guide sit directly under the H1 and ABOVE the status
+			// notices (e.g. the past-date warning below), instead of beneath
+			// them.
+			if ( WPMTM_Wizard::instance()->is_active() ) {
+				WPMTM_Wizard::instance()->render_panel( $tournament );
+			}
+			?>
+			<hr class="wp-header-end">
 			<?php
 			$event_permalink = $event_post_id ? get_permalink( $event_post_id ) : false;
 			if ( $event_permalink ) :
 				?>
 				<p class="wpmtm-switch-to-event">
-					<a href="<?php echo esc_url( $event_permalink ); ?>"><?php esc_html_e( 'Switch to event', 'wp-tournament-manager' ); ?></a>
+					<a href="<?php echo esc_url( $event_permalink ); ?>"><?php esc_html_e( 'Event details', 'wp-tournament-manager' ); ?></a>
 					&nbsp;|&nbsp;
-					<a href="<?php echo esc_url( $event_permalink . '#tab-registrations' ); ?>"><?php esc_html_e( "View the event's Registrations tab", 'wp-tournament-manager' ); ?></a>
+					<a href="<?php echo esc_url( $event_permalink . '#tab-registrations' ); ?>"><?php esc_html_e( 'Registrations', 'wp-tournament-manager' ); ?></a>
+					&nbsp;|&nbsp;
+					<a href="<?php echo esc_url( $event_permalink . '#tab-standings' ); ?>"><?php esc_html_e( 'Standings', 'wp-tournament-manager' ); ?></a>
+					&nbsp;|&nbsp;
+					<a href="<?php echo esc_url( $event_permalink . '#tab-wall-chart' ); ?>"><?php esc_html_e( 'Wall chart', 'wp-tournament-manager' ); ?></a>
+					&nbsp;|&nbsp;
+					<a href="<?php echo esc_url( $event_permalink . '#tab-round-entry' ); ?>"><?php esc_html_e( 'Rounds', 'wp-tournament-manager' ); ?></a>
 				</p>
 			<?php endif; ?>
 			<?php if ( $is_edit ) : ?>
+				<?php
+				$today = current_time( 'Y-m-d' );
+				$is_past = ( $end && $end < $today ) || ( ! $end && $begin && $begin < $today );
+				if ( $is_past ) :
+					?>
+					<div class="notice notice-warning">
+						<p><?php esc_html_e( 'This tournament\'s dates have already passed, so it probably holds final results. Changes here can alter standings that players have already seen, and if it was submitted to USCF the rating report will no longer match. Editing is not blocked, so just check that a change here is really necessary.', 'wp-tournament-manager' ); ?></p>
+					</div>
+				<?php endif; ?>
 				<?php $this->render_lock_control( $tournament ); ?>
 			<?php endif; ?>
 			<?php $this->render_admin_header(); ?>
+			<?php WPMTM_Wizard::instance()->render_guide_shown_notice(); ?>
 			<?php $this->render_notices(); ?>
 			<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>">
 				<?php wp_nonce_field( 'wpmtm_save_tournament_' . $tournament_id, 'wpmtm_tournament_nonce' ); ?>
@@ -321,9 +404,9 @@ class WPMTM_Admin {
 					<tr>
 						<th scope="row"><?php esc_html_e( 'Rated', 'wp-tournament-manager' ); ?></th>
 						<td>
-							<label><input type="checkbox" name="rated" value="1" <?php checked( $rated ); ?>> <?php esc_html_e( 'This is a USCF rated tournament', 'wp-tournament-manager' ); ?></label>
-							<p class="description"><?php esc_html_e( 'Unrated tournaments never require the affiliate ID or TD IDs, and never use DBF export.', 'wp-tournament-manager' ); ?></p>
-							<p class="description"><?php esc_html_e( 'This is the master switch: an unrated tournament never exports, no matter what any individual section says. When this is checked, each section also has its own Rated checkbox (in the Sections editor and the import preview), and only rated sections are included in the USCF files - so one event can mix rated and unrated sections, e.g. a rated Open next to an unrated scholastic side event.', 'wp-tournament-manager' ); ?></p>
+							<label><input type="checkbox" name="rated" value="1" <?php checked( $rated ); ?>> <?php esc_html_e( 'This tournament has USCF-rated sections', 'wp-tournament-manager' ); ?></label>
+							<p class="description"><?php esc_html_e( 'When checked, each section is given a Rated checkbox in the sections editor and registrations import preview. A tournament can mix rated and unrated sections, e.g. a rated Open and an unrated scholastic side event. Only the sections marked as Rated are included in the USCF export.', 'wp-tournament-manager' ); ?></p>
+							<p class="description"><?php esc_html_e( 'Unrated tournaments don\'t require a club affiliate ID or any TD IDs. Enable temporarily to download a DBF export of any sections marked as Rated for historical purposes or to import this tournament\'s into other tournament management software.', 'wp-tournament-manager' ); ?></p>
 						</td>
 					</tr>
 					<tr>
@@ -354,14 +437,38 @@ class WPMTM_Admin {
 						<th scope="row"><label for="wpmtm-head-td-id"><?php esc_html_e( 'Chief TD USCF ID', 'wp-tournament-manager' ); ?></label></th>
 						<td>
 							<input type="text" id="wpmtm-head-td-id" class="regular-text" maxlength="8" name="head_td_id" value="<?php echo esc_attr( $head_td ); ?>" placeholder="12345678">
-							<p class="description"><?php esc_html_e( 'Leave blank to use the club default from Tournament Manager Settings.', 'wp-tournament-manager' ); ?></p>
+							<?php if ( '' !== trim( (string) $opts['chief_td_id'] ) ) : ?>
+								<button type="button" class="button" data-wpmtm-use-default data-target="wpmtm-head-td-id" data-default="<?php echo esc_attr( $opts['chief_td_id'] ); ?>"><?php esc_html_e( 'Use default', 'wp-tournament-manager' ); ?></button>
+							<?php else : ?>
+								<button type="button" class="button" disabled title="<?php esc_attr_e( 'No Default Chief TD ID is set in Tournament Manager Settings.', 'wp-tournament-manager' ); ?>"><?php esc_html_e( 'Use default', 'wp-tournament-manager' ); ?></button>
+							<?php endif; ?>
+							<p class="description"><?php esc_html_e( 'This tournament\'s own chief TD. Blank means no chief TD is submitted for this tournament. The "Use default" button copies the club default set on the Tournament Manager Settings page. It does not apply automatically.', 'wp-tournament-manager' ); ?></p>
 						</td>
 					</tr>
 					<tr>
 						<th scope="row"><label for="wpmtm-assistant-td-id"><?php esc_html_e( 'Assistant TD USCF ID', 'wp-tournament-manager' ); ?></label></th>
 						<td>
 							<input type="text" id="wpmtm-assistant-td-id" class="regular-text" maxlength="8" name="assistant_td_id" value="<?php echo esc_attr( $assistant_td ); ?>" placeholder="">
-							<p class="description"><?php esc_html_e( 'Leave blank to use the club default from Tournament Manager Settings.', 'wp-tournament-manager' ); ?></p>
+							<?php if ( '' !== trim( (string) $opts['assistant_td_id'] ) ) : ?>
+								<button type="button" class="button" data-wpmtm-use-default data-target="wpmtm-assistant-td-id" data-default="<?php echo esc_attr( $opts['assistant_td_id'] ); ?>"><?php esc_html_e( 'Use default', 'wp-tournament-manager' ); ?></button>
+							<?php else : ?>
+								<button type="button" class="button" disabled title="<?php esc_attr_e( 'No Default Assistant TD ID is set in Tournament Manager Settings.', 'wp-tournament-manager' ); ?>"><?php esc_html_e( 'Use default', 'wp-tournament-manager' ); ?></button>
+							<?php endif; ?>
+							<p class="description"><?php esc_html_e( 'This tournament\'s own assistant TD. Blank means no assistant TD is submitted for this tournament. The "Use default" button copies the club default set on the Tournament Manager Settings page. It does not apply automatically.', 'wp-tournament-manager' ); ?></p>
+						</td>
+					</tr>
+					<tr>
+						<th scope="row"><label for="wpmtm-affiliate-id"><?php esc_html_e( 'USCF affiliate ID', 'wp-tournament-manager' ); ?></label></th>
+						<td>
+							<input type="text" id="wpmtm-affiliate-id" class="regular-text" maxlength="10" name="affiliate_id" value="<?php echo esc_attr( $affiliate_id ); ?>" placeholder="A1234567">
+							<?php if ( '' !== trim( (string) $opts['affiliate_id'] ) ) : ?>
+								<button type="button" class="button" data-wpmtm-use-default data-target="wpmtm-affiliate-id" data-default="<?php echo esc_attr( $opts['affiliate_id'] ); ?>"><?php esc_html_e( 'Use default', 'wp-tournament-manager' ); ?></button>
+							<?php else : ?>
+								<button type="button" class="button" disabled title="<?php esc_attr_e( 'No Default USCF affiliate ID is set in Tournament Manager Settings.', 'wp-tournament-manager' ); ?>"><?php esc_html_e( 'Use default', 'wp-tournament-manager' ); ?></button>
+							<?php endif; ?>
+							<p class="description"><?php esc_html_e( 'This tournament\'s own affiliate ID, for a shared install running an event on behalf of a different club. Blank falls back to the club default set on the Tournament Manager Settings page at export and validation time. The "Use default" button copies that Settings value in. It does not apply automatically.', 'wp-tournament-manager' ); ?></p>
+							<p class="description"><?php esc_html_e( 'To submit a rated tournament on behalf of an affiliate other than your own, the directing TD must be an authorized tournament director of that affiliate. That affiliate\'s Affiliate Manager can add a TD as one of its authorized TDs.', 'wp-tournament-manager' ); ?></p>
+							<p class="description"><?php esc_html_e( 'The submitting TD is responsible for the tournament\'s validity and payment of the USCF tournament fee. The lead TD, if different from the submitting TD, is also responsible for the tournament being valid. If the submitter is not the directing TD, do not list the submitter as a TD on the tournament.', 'wp-tournament-manager' ); ?></p>
 						</td>
 					</tr>
 					<?php if ( $is_edit ) : ?>
@@ -369,9 +476,10 @@ class WPMTM_Admin {
 							<th scope="row"><?php esc_html_e( 'USCF status', 'wp-tournament-manager' ); ?></th>
 							<td>
 								<button type="button" class="button" data-wpmtm-validate-tds data-context="tournament" data-tournament="<?php echo esc_attr( $tournament_id ); ?>" data-nonce="<?php echo esc_attr( wp_create_nonce( 'wpmtm_validate_tds' ) ); ?>">
-									<?php esc_html_e( 'Validate TDs', 'wp-tournament-manager' ); ?>
+									<?php esc_html_e( 'Validate with USCF', 'wp-tournament-manager' ); ?>
 								</button>
-								<p class="description"><?php esc_html_e( 'Checks the club affiliate ID from Settings plus the effective Chief and Assistant TD IDs (the overrides above when set, or the Settings defaults) against the USCF ratings API, as active through the tournament end date. Advisory only - nothing is blocked by the result. Checks use the saved values, so save the tournament first if you changed the IDs above.', 'wp-tournament-manager' ); ?></p>
+								<p class="description wpmtm-td-check-last" data-wpmtm-td-check-last><?php echo esc_html( WPMTM_USCF_Status::last_td_check_text( $tournament_id ) ); ?></p>
+								<p class="description"><?php esc_html_e( 'Checks this tournament\'s effective affiliate ID (its own if set, else the Settings default) plus its own Chief and Assistant TD IDs against the USCF ratings API, as active through the tournament end date. A blank TD field reports as missing, not the Settings default. A blank affiliate field reports the Settings default instead. Nothing is blocked by the result. Checks use the saved values, so save the tournament first if the IDs above have been changed.', 'wp-tournament-manager' ); ?></p>
 								<div data-wpmtm-validate-tds-results></div>
 							</td>
 						</tr>
@@ -380,14 +488,14 @@ class WPMTM_Admin {
 						<th scope="row"><?php esc_html_e( 'Crosstable flag', 'wp-tournament-manager' ); ?></th>
 						<td>
 							<label><input type="checkbox" name="send_crosstable" value="1" <?php checked( $send_x ); ?>> <?php esc_html_e( 'Set the crosstable flag (H_SENDCROS) in the USCF export header', 'wp-tournament-manager' ); ?></label>
-							<p class="description"><?php esc_html_e( 'A leftover from the paper era: this header flag asked US Chess to mail the affiliate a printed crosstable of the rated event. Results appear online at ratings.uschess.org regardless, so nearly every club leaves this off.', 'wp-tournament-manager' ); ?></p>
+							<p class="description"><?php esc_html_e( 'A leftover from the paper era: this header flag asked USCF to mail the affiliate a printed crosstable of the rated event. Results appear online at ratings.uschess.org regardless, so nearly every club leaves this off.', 'wp-tournament-manager' ); ?></p>
 						</td>
 					</tr>
 					<tr>
 						<th scope="row"><?php esc_html_e( 'Show profile pictures', 'wp-tournament-manager' ); ?></th>
 						<td>
 							<label><input type="checkbox" name="show_photos" value="1" <?php checked( $show_photos ); ?>> <?php esc_html_e( 'Show profile pictures', 'wp-tournament-manager' ); ?></label>
-							<p class="description"><?php esc_html_e( 'Shows registrant photos, when available from the event registration, on the public standings, wall chart, and pairing aid. Players without a photo get a neutral silhouette; layout is identical either way.', 'wp-tournament-manager' ); ?></p>
+							<p class="description"><?php esc_html_e( 'Shows registrant photos, when available from the event registration, on the public standings, wall chart, and pairing aid. Useful for youth tournaments or if registrants upload inappropriate photos.', 'wp-tournament-manager' ); ?></p>
 						</td>
 					</tr>
 				</table>
@@ -446,15 +554,54 @@ class WPMTM_Admin {
 
 	protected function render_event_picker( $selected_id ) {
 		if ( post_type_exists( 'tribe_events' ) ) {
+			// 'tribe_suppress_query_filters' (2026-07-21): without it, The
+			// Events Calendar filters any tribe_events query down to UPCOMING
+			// events only, which is exactly backwards for this picker. A TD
+			// runs the tournament first and enters results afterward, so by
+			// the time they are on this screen the event is virtually always
+			// in the past. Measured on the live install: 163 published events
+			// existed, this query returned 3, and every event the real
+			// tournaments were linked to was missing. TEC's own documented
+			// escape hatch is this flag - eventDisplay 'custom'/'all' and
+			// suppress_filters were each tried and do NOT work, so do not
+			// "simplify" it to one of those. Cost is unchanged at 5 queries
+			// (WordPress primes the post-meta cache for the whole result set
+			// in one go), measured at 65.7 ms for all 163.
 			$events = get_posts(
 				array(
-					'post_type'      => 'tribe_events',
-					'post_status'    => 'publish',
-					'posts_per_page' => -1,
-					'orderby'        => 'title',
-					'order'          => 'ASC',
+					'post_type'                    => 'tribe_events',
+					'post_status'                  => 'publish',
+					'posts_per_page'               => -1,
+					'orderby'                      => 'title',
+					'order'                        => 'ASC',
+					'tribe_suppress_query_filters' => true,
 				)
 			);
+
+			// Defense in depth for the same bug: whatever the query returns,
+			// the tournament's CURRENTLY linked event must always be offered,
+			// or the <select> falls back to its first option ("-- none --")
+			// and a plain Save silently unlinks the tournament -
+			// handle_save_tournament() reads this field straight into
+			// event_post_id, so an absent option is real data loss, not just
+			// a display gap. Keeps working even if TEC changes its query
+			// behavior again.
+			$selected_id = (int) $selected_id;
+			if ( $selected_id > 0 ) {
+				$already_listed = false;
+				foreach ( $events as $event ) {
+					if ( (int) $event->ID === $selected_id ) {
+						$already_listed = true;
+						break;
+					}
+				}
+				if ( ! $already_listed ) {
+					$selected_post = get_post( $selected_id );
+					if ( $selected_post && 'tribe_events' === $selected_post->post_type ) {
+						$events[] = $selected_post;
+					}
+				}
+			}
 
 			// Re-order by the event's own start date, most recent first,
 			// rather than by title: _EventStartDate is a plain 'Y-m-d H:i:s'
@@ -539,6 +686,9 @@ class WPMTM_Admin {
 		if ( $tournament_id ) {
 			$existing = WPMTM_Repository::get_tournament( $tournament_id );
 			if ( $existing ) {
+				if ( ! WPMTM_Roles::user_can_manage_tournament( $existing ) ) {
+					wp_die( esc_html__( 'You do not have permission to edit this tournament.', 'wp-tournament-manager' ) );
+				}
 				$old_event_post_id = (int) $existing->event_post_id;
 			}
 		}
@@ -546,7 +696,7 @@ class WPMTM_Admin {
 		$name = isset( $_POST['name'] ) ? sanitize_text_field( wp_unslash( $_POST['name'] ) ) : '';
 
 		if ( '' === $name ) {
-			$this->set_notice( 'error', __( 'Tournament name is required; nothing was saved.', 'wp-tournament-manager' ) );
+			$this->set_notice( 'error', __( 'Tournament name is required. Nothing was saved.', 'wp-tournament-manager' ) );
 			wp_safe_redirect( wp_get_referer() ? wp_get_referer() : admin_url( 'admin.php?page=wpmtm' ) );
 			exit;
 		}
@@ -561,8 +711,10 @@ class WPMTM_Admin {
 		$name = mb_substr( $name, 0, 191 );
 
 		$rated         = ! empty( $_POST['rated'] ) ? 1 : 0;
-		$begin_date    = $this->sanitize_date( isset( $_POST['begin_date'] ) ? $_POST['begin_date'] : '' );
-		$end_date      = $this->sanitize_date( isset( $_POST['end_date'] ) ? $_POST['end_date'] : '' );
+		// phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- sanitize_date() (below) applies sanitize_text_field() and a strict Y-m-d format check, returning null on anything malformed; the sniff cannot see through the wrapper call.
+		$begin_date    = $this->sanitize_date( isset( $_POST['begin_date'] ) ? wp_unslash( $_POST['begin_date'] ) : '' );
+		// phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- sanitize_date(), see note above.
+		$end_date      = $this->sanitize_date( isset( $_POST['end_date'] ) ? wp_unslash( $_POST['end_date'] ) : '' );
 		$event_post_id = isset( $_POST['event_post_id'] ) ? absint( $_POST['event_post_id'] ) : 0;
 		$city          = isset( $_POST['city'] ) ? sanitize_text_field( wp_unslash( $_POST['city'] ) ) : '';
 		$city          = mb_substr( $city, 0, 191 );
@@ -583,12 +735,31 @@ class WPMTM_Admin {
 		$assistant_td_id = isset( $_POST['assistant_td_id'] ) ? trim( sanitize_text_field( wp_unslash( $_POST['assistant_td_id'] ) ) ) : '';
 
 		if ( '' !== $head_td_id && ! preg_match( '/^\d{8}$/', $head_td_id ) ) {
-			$this->set_notice( 'error', __( 'Chief TD USCF ID must be blank or 8 digits; nothing was saved.', 'wp-tournament-manager' ) );
+			$this->set_notice( 'error', __( 'Chief TD USCF ID must be blank or 8 digits. Nothing was saved.', 'wp-tournament-manager' ) );
 			wp_safe_redirect( wp_get_referer() ? wp_get_referer() : admin_url( 'admin.php?page=wpmtm' ) );
 			exit;
 		}
 		if ( '' !== $assistant_td_id && ! preg_match( '/^\d{8}$/', $assistant_td_id ) ) {
-			$this->set_notice( 'error', __( 'Assistant TD USCF ID must be blank or 8 digits; nothing was saved.', 'wp-tournament-manager' ) );
+			$this->set_notice( 'error', __( 'Assistant TD USCF ID must be blank or 8 digits. Nothing was saved.', 'wp-tournament-manager' ) );
+			wp_safe_redirect( wp_get_referer() ? wp_get_referer() : admin_url( 'admin.php?page=wpmtm' ) );
+			exit;
+		}
+
+		// Per-tournament affiliate ID override (docs/SPEC.md, "Decisions
+		// (2026-07-18, per-tournament USCF affiliate ID)"): validated with
+		// the same shape (a letter followed by digits) WPMTM_USCF_Status::
+		// sanitize_affiliate_id() already enforces for every other affiliate
+		// ID input (registration check, CLI, Settings). A malformed value
+		// aborts the whole save with nothing written, the same as the two TD
+		// ID fields above, rather than silently dropping just this field.
+		// wpmtm_tournaments.affiliate_id is varchar(10), so a sanitized
+		// result longer than that (there is no upper digit-count cap in
+		// sanitize_affiliate_id() itself) is also rejected here rather than
+		// risk a silent MySQL truncation.
+		$affiliate_id_raw = isset( $_POST['affiliate_id'] ) ? trim( sanitize_text_field( wp_unslash( $_POST['affiliate_id'] ) ) ) : '';
+		$affiliate_id     = '' !== $affiliate_id_raw ? WPMTM_USCF_Status::sanitize_affiliate_id( $affiliate_id_raw ) : '';
+		if ( '' !== $affiliate_id_raw && ( '' === $affiliate_id || strlen( $affiliate_id ) > 10 ) ) {
+			$this->set_notice( 'error', __( 'USCF affiliate ID must be blank or a letter followed by digits (e.g. A1234567). Nothing was saved.', 'wp-tournament-manager' ) );
 			wp_safe_redirect( wp_get_referer() ? wp_get_referer() : admin_url( 'admin.php?page=wpmtm' ) );
 			exit;
 		}
@@ -640,22 +811,25 @@ class WPMTM_Admin {
 			'zipcode'         => '' !== $zipcode ? $zipcode : null,
 			'head_td_id'      => '' !== $head_td_id ? $head_td_id : null,
 			'assistant_td_id' => '' !== $assistant_td_id ? $assistant_td_id : null,
+			'affiliate_id'    => '' !== $affiliate_id ? $affiliate_id : null,
 			'send_crosstable' => $send_x,
 			'show_photos'     => $show_photos,
 			'updated_at'      => $now,
 		);
-		$formats = array( '%d', '%s', '%d', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%d', '%d', '%s' );
+		$formats = array( '%d', '%s', '%d', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%d', '%d', '%s' );
 
 		if ( $tournament_id ) {
-			$result = $wpdb->update( $table, $data, array( 'id' => $tournament_id ), $formats, array( '%d' ) );
+			$result = $wpdb->update( $table, $data, array( 'id' => $tournament_id ), $formats, array( '%d' ) ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching -- custom wpmtm_tournaments table, no core API; $wpdb->update() escapes values via the $formats array. Not a cacheable read.
 		} else {
 			$data['status']     = 'setup';
 			$data['country']    = 'USA';
+			$data['created_by'] = get_current_user_id();
 			$data['created_at'] = $now;
 			$formats[]          = '%s';
 			$formats[]          = '%s';
+			$formats[]          = '%d';
 			$formats[]          = '%s';
-			$result = $wpdb->insert( $table, $data, $formats );
+			$result = $wpdb->insert( $table, $data, $formats ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery -- custom wpmtm_tournaments table, no core API; $wpdb->insert() escapes values via the $formats array.
 			if ( false !== $result ) {
 				$tournament_id = (int) $wpdb->insert_id;
 			}
@@ -684,8 +858,75 @@ class WPMTM_Admin {
 			$message .= ' ' . __( 'The linked event could not be found, so the link was cleared.', 'wp-tournament-manager' );
 		}
 		$this->set_notice( 'success', $message );
+
+		$this->maybe_notice_td_status( $head_td_id, $assistant_td_id, $end_date );
+
 		wp_safe_redirect( add_query_arg( array( 'page' => 'wpmtm-edit', 'id' => $tournament_id ), admin_url( 'admin.php' ) ) );
 		exit;
+	}
+
+	/**
+	 * Chief + assistant TD USCF status check on tournament create/save
+	 * (docs/SPEC.md v1.2 section 4): warn-only, an admin_notices message
+	 * queued through the same one-shot transient pipeline (WPMTM_Admin_Shared
+	 * ::set_notice()/render_notices()) the save success message above
+	 * already uses, so it survives the redirect and renders on the
+	 * tournament edit page a TD lands on after saving. Never blocks the
+	 * save - this runs after the write has already succeeded. Uses the
+	 * normal (cached) USCF lookup, not a forced fresh one - unlike the
+	 * DBF export gate, nothing here blocks anything, so a brief staleness
+	 * window is an acceptable trade against hitting the API on every
+	 * tournament save.
+	 *
+	 * No Settings fallback (docs/SPEC.md, 2026-07-17, "TD default removal"):
+	 * this checks ONLY the tournament's own chief/assistant TD id, the same
+	 * as the DBF export and the "Validate with USCF" button, so a
+	 * tournament with no TD of its own never triggers a warning about a
+	 * club-wide default it does not actually use.
+	 *
+	 * @param string $head_td_id      This tournament's chief TD id, or ''.
+	 * @param string $assistant_td_id This tournament's assistant TD id, or ''.
+	 * @param string $end_date        Tournament end date (YYYY-MM-DD), or ''.
+	 */
+	protected function maybe_notice_td_status( $head_td_id, $assistant_td_id, $end_date ) {
+		$chief     = trim( (string) $head_td_id );
+		$assistant = trim( (string) $assistant_td_id );
+
+		if ( '' === trim( $chief ) && '' === trim( $assistant ) ) {
+			return; // Nothing to check - unrated tournaments commonly have neither set.
+		}
+
+		$through = WPMTM_USCF_Status::resolve_through_date( (string) $end_date, '', '' );
+		$status  = WPMTM_USCF_Status::instance();
+		$lines   = array();
+
+		$roles = array(
+			array( __( 'Chief TD', 'wp-tournament-manager' ), $chief ),
+			array( __( 'Assistant TD', 'wp-tournament-manager' ), $assistant ),
+		);
+		foreach ( $roles as $pair ) {
+			list( $role, $id ) = $pair;
+			if ( '' === trim( $id ) ) {
+				continue;
+			}
+			$verdict = $status->validate_td( $id, $through );
+			if ( 'FAIL' === $verdict['verdict'] ) {
+				/* translators: 1: TD role (Chief TD / Assistant TD); 2: reason the check failed */
+				$lines[] = sprintf( __( '%1$s: %2$s', 'wp-tournament-manager' ), $role, $verdict['reason'] );
+			} elseif ( 'UNKNOWN' === $verdict['verdict'] ) {
+				/* translators: %s: TD role (Chief TD / Assistant TD) */
+				$lines[] = sprintf( __( '%s: USCF status could not be verified right now.', 'wp-tournament-manager' ), $role );
+			}
+		}
+
+		if ( empty( $lines ) ) {
+			return;
+		}
+
+		$this->set_notice(
+			'warning',
+			__( 'USCF TD check (does not block saving): ', 'wp-tournament-manager' ) . implode( ' ', $lines )
+		);
 	}
 
 	public function handle_delete_tournament() {
@@ -696,6 +937,10 @@ class WPMTM_Admin {
 		// Captured before the cascade delete removes the tournament row, so
 		// the now-orphaned event page's cache still gets flushed.
 		$tournament = $tournament_id ? WPMTM_Repository::get_tournament( $tournament_id ) : null;
+
+		if ( $tournament && ! WPMTM_Roles::user_can_manage_tournament( $tournament ) ) {
+			wp_die( esc_html__( 'You do not have permission to delete this tournament.', 'wp-tournament-manager' ) );
+		}
 
 		if ( $tournament ) {
 			WPMTM_Repository::delete_tournament_cascade( $tournament_id );
@@ -725,6 +970,9 @@ class WPMTM_Admin {
 		if ( ! $tournament ) {
 			wp_die( esc_html__( 'Tournament not found.', 'wp-tournament-manager' ) );
 		}
+		if ( ! WPMTM_Roles::user_can_manage_tournament( $tournament ) ) {
+			wp_die( esc_html__( 'You do not have permission to lock/unlock this tournament.', 'wp-tournament-manager' ) );
+		}
 
 		$new_locked = ! (bool) $tournament->locked;
 		$saved      = WPMTM_Repository::set_tournament_locked( $tournament_id, $new_locked );
@@ -737,551 +985,19 @@ class WPMTM_Admin {
 				'success',
 				$new_locked
 					? __( 'Tournament locked and marked complete.', 'wp-tournament-manager' )
-					: __( 'Tournament unlocked; results can be edited again.', 'wp-tournament-manager' )
+					: __( 'Tournament unlocked. Results can be edited again.', 'wp-tournament-manager' )
 			);
 		}
 
-		wp_safe_redirect( add_query_arg( array( 'page' => 'wpmtm-edit', 'id' => $tournament_id ), admin_url( 'admin.php' ) ) );
-		exit;
-	}
-
-	// -----------------------------------------------------------------
-	// Sections editor
-	// -----------------------------------------------------------------
-
-	protected function render_sections_editor( $tournament ) {
-		$sections = WPMTM_Repository::get_sections( $tournament->id );
-		$counts   = WPMTM_Repository::player_counts_by_section( $tournament->id );
-		$presets  = WPMTM_Plugin::instance()->get_timectl_presets();
-		?>
-		<div class="wrap wpmtm-wrap">
-			<h2><?php esc_html_e( 'Sections', 'wp-tournament-manager' ); ?></h2>
-
-			<div class="notice notice-info inline">
-				<p><?php esc_html_e( 'Each row is one section - a separate group of players, such as Open or Reserve.', 'wp-tournament-manager' ); ?></p>
-				<ul>
-					<li><?php esc_html_e( '# is assigned automatically; you cannot edit it here.', 'wp-tournament-manager' ); ?></li>
-					<li><?php esc_html_e( 'Rating system is normally worked out from the time control (Regular, Quick, or Blitz, per USCF rules); a warning appears when you save if they disagree.', 'wp-tournament-manager' ); ?></li>
-					<li><?php esc_html_e( 'Time control uses USCF notation, e.g. G/30;d0 - start typing to see suggestions from Settings.', 'wp-tournament-manager' ); ?></li>
-					<li><?php esc_html_e( 'Rounds is the total number of rounds planned for the section.', 'wp-tournament-manager' ); ?></li>
-					<li><?php esc_html_e( 'Type is Swiss by default. Round Robin pairs every player against every other player once; the pairing aid and USCF submission both adapt automatically (see the note under Type when it is selected).', 'wp-tournament-manager' ); ?></li>
-					<li><?php esc_html_e( 'Quad is a 4-player round robin, 3 rounds; it behaves exactly like Round Robin everywhere. The import screen can also split a large section into quads automatically.', 'wp-tournament-manager' ); ?></li>
-					<li><?php esc_html_e( 'Advanced holds optional Grand Prix and scholastic settings.', 'wp-tournament-manager' ); ?></li>
-					<li><?php esc_html_e( 'Rated controls whether the section goes into the USCF export.', 'wp-tournament-manager' ); ?></li>
-					<li><?php esc_html_e( '"Manage (n)" opens that section\'s player list, where pairing numbers are assigned automatically by rating.', 'wp-tournament-manager' ); ?></li>
-					<li><?php esc_html_e( 'Remove deletes the section, and once you click Save, all of its players, games, and byes too.', 'wp-tournament-manager' ); ?></li>
-				</ul>
-			</div>
-
-			<?php if ( $presets ) : ?>
-				<datalist id="wpmtm-timectl-presets">
-					<?php foreach ( $presets as $preset ) : ?>
-						<option value="<?php echo esc_attr( $preset ); ?>"></option>
-					<?php endforeach; ?>
-				</datalist>
-			<?php endif; ?>
-
-			<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>">
-				<?php wp_nonce_field( 'wpmtm_save_sections_' . $tournament->id, 'wpmtm_sections_nonce' ); ?>
-				<input type="hidden" name="action" value="wpmtm_save_sections">
-				<input type="hidden" name="tournament_id" value="<?php echo esc_attr( $tournament->id ); ?>">
-				<input type="hidden" id="wpmtm-removed-sections" name="removed_sections" value="">
-
-				<table class="wp-list-table widefat fixed striped wpmtm-repeater" id="wpmtm-sections-table" data-wpmtm-repeater data-removed-input="wpmtm-removed-sections">
-					<thead>
-						<tr>
-							<th class="wpmtm-col-num"><?php esc_html_e( '#', 'wp-tournament-manager' ); ?></th>
-							<th><?php esc_html_e( 'Name', 'wp-tournament-manager' ); ?></th>
-							<th><?php esc_html_e( 'Rating system', 'wp-tournament-manager' ); ?></th>
-							<th><?php esc_html_e( 'Time control', 'wp-tournament-manager' ); ?></th>
-							<th><?php esc_html_e( 'Rounds', 'wp-tournament-manager' ); ?></th>
-							<th><?php esc_html_e( 'Type', 'wp-tournament-manager' ); ?></th>
-							<th><?php esc_html_e( 'Advanced', 'wp-tournament-manager' ); ?></th>
-							<th><?php esc_html_e( 'Rated', 'wp-tournament-manager' ); ?></th>
-							<th><?php esc_html_e( 'Players', 'wp-tournament-manager' ); ?></th>
-							<th></th>
-						</tr>
-					</thead>
-					<tbody>
-					<?php foreach ( $sections as $section ) : ?>
-						<?php $this->render_section_row( $section, $tournament->id, null, isset( $counts[ $section->id ] ) ? $counts[ $section->id ] : 0 ); ?>
-					<?php endforeach; ?>
-					</tbody>
-					<template>
-						<?php $this->render_section_row( null, $tournament->id, '__INDEX__' ); ?>
-					</template>
-				</table>
-				<p><button type="button" class="button" data-add-row-for="wpmtm-sections-table"><?php esc_html_e( '+ Add section', 'wp-tournament-manager' ); ?></button></p>
-				<p class="description"><?php esc_html_e( 'Unrated sections are never included in the USCF export.', 'wp-tournament-manager' ); ?></p>
-				<?php submit_button( __( 'Save Sections', 'wp-tournament-manager' ) ); ?>
-			</form>
-		</div>
-		<?php
-	}
-
-	protected function render_section_row( $section, $tournament_id, $index = null, $player_count = 0 ) {
-		$is_template = null === $section;
-		$key         = $is_template ? $index : $section->id;
-		$sec_num     = $is_template ? '' : $section->sec_num;
-		$sec_name    = $is_template ? '' : $section->sec_name;
-		$r_system    = $is_template ? 'R' : $section->r_system;
-		$timectl     = $is_template ? '' : $section->timectl;
-		$tot_rnds    = $is_template ? '' : $section->tot_rnds;
-		$trn_type    = $is_template ? 'S' : $section->trn_type;
-		$sch_lvl     = $is_template ? '' : $section->sch_lvl;
-		$gr_prix     = ! $is_template && 'Y' === $section->gr_prix;
-		$gp_pts      = $is_template ? '' : $section->gp_pts;
-		$rated       = $is_template ? true : (bool) $section->rated;
-
-		$players_link = '';
-		if ( ! $is_template ) {
-			$players_link = add_query_arg( array( 'page' => 'wpmtm-edit', 'id' => $tournament_id, 'section_id' => $section->id ), admin_url( 'admin.php' ) );
-		}
-		?>
-		<tr<?php echo $is_template ? '' : ' data-existing-id="' . esc_attr( $key ) . '"'; ?>>
-			<td class="wpmtm-col-num"><?php echo $is_template ? esc_html__( 'auto', 'wp-tournament-manager' ) : esc_html( $sec_num ); ?></td>
-			<td><input type="text" maxlength="30" name="sections[<?php echo esc_attr( $key ); ?>][sec_name]" value="<?php echo esc_attr( $sec_name ); ?>" placeholder="<?php esc_attr_e( 'e.g. Open', 'wp-tournament-manager' ); ?>"></td>
-			<td>
-				<select name="sections[<?php echo esc_attr( $key ); ?>][r_system]">
-					<?php
-					$systems = array(
-						'R' => __( 'Regular', 'wp-tournament-manager' ),
-						'Q' => __( 'Quick', 'wp-tournament-manager' ),
-						'B' => __( 'Blitz', 'wp-tournament-manager' ),
-					);
-					foreach ( $systems as $code => $label ) :
-						?>
-						<option value="<?php echo esc_attr( $code ); ?>" <?php selected( $r_system, $code ); ?>><?php echo esc_html( $label . ' (' . $code . ')' ); ?></option>
-					<?php endforeach; ?>
-				</select>
-			</td>
-			<td><input type="text" list="wpmtm-timectl-presets" maxlength="40" name="sections[<?php echo esc_attr( $key ); ?>][timectl]" value="<?php echo esc_attr( $timectl ); ?>" placeholder="G/30;d0"></td>
-			<td><input type="number" min="0" max="99" class="small-text" name="sections[<?php echo esc_attr( $key ); ?>][tot_rnds]" value="<?php echo esc_attr( $tot_rnds ); ?>"></td>
-			<td>
-				<select name="sections[<?php echo esc_attr( $key ); ?>][trn_type]" data-wpmtm-trn-type>
-					<option value="S" <?php selected( $trn_type, 'S' ); ?>><?php esc_html_e( 'Swiss', 'wp-tournament-manager' ); ?></option>
-					<option value="R" <?php selected( $trn_type, 'R' ); ?>><?php esc_html_e( 'Round Robin', 'wp-tournament-manager' ); ?></option>
-					<option value="Q" <?php selected( $trn_type, 'Q' ); ?>><?php esc_html_e( 'Quad (4-player round robin)', 'wp-tournament-manager' ); ?></option>
-					<option value="DRR" disabled><?php esc_html_e( 'Double Round Robin (not yet supported)', 'wp-tournament-manager' ); ?></option>
-					<option value="TS" disabled><?php esc_html_e( 'Team Swiss (not yet supported)', 'wp-tournament-manager' ); ?></option>
-					<option value="M" disabled><?php esc_html_e( 'Match (not yet supported)', 'wp-tournament-manager' ); ?></option>
-				</select>
-				<p class="description wpmtm-rr-hint" data-wpmtm-rr-hint <?php echo in_array( $trn_type, WPMTM_Pairing_Aid::RR_TYPES, true ) ? '' : 'hidden'; ?>>
-					<?php esc_html_e( 'Round robin: every player faces every other player once; total rounds is players minus 1 for an even player count, or equal to the player count for an odd count (everyone sits out once). A quad is the same thing fixed at 4 players and 3 rounds.', 'wp-tournament-manager' ); ?>
-				</p>
-			</td>
-			<td class="wpmtm-col-advanced">
-				<details>
-					<summary><?php esc_html_e( 'Advanced', 'wp-tournament-manager' ); ?></summary>
-					<div class="wpmtm-advanced-panel">
-						<p><label><input type="checkbox" name="sections[<?php echo esc_attr( $key ); ?>][gr_prix]" value="1" <?php checked( $gr_prix ); ?>> <?php esc_html_e( 'Grand Prix', 'wp-tournament-manager' ); ?></label></p>
-						<p><label><?php esc_html_e( 'GP points', 'wp-tournament-manager' ); ?> <input type="number" min="0" max="999" class="small-text" name="sections[<?php echo esc_attr( $key ); ?>][gp_pts]" value="<?php echo esc_attr( $gp_pts ); ?>"></label></p>
-						<p><label><?php esc_html_e( 'Scholastic level', 'wp-tournament-manager' ); ?> <input type="text" maxlength="1" class="small-text" name="sections[<?php echo esc_attr( $key ); ?>][sch_lvl]" value="<?php echo esc_attr( $sch_lvl ); ?>"></label></p>
-					</div>
-				</details>
-			</td>
-			<td><label><input type="checkbox" name="sections[<?php echo esc_attr( $key ); ?>][rated]" value="1" <?php checked( $rated ); ?>> <?php esc_html_e( 'Rated', 'wp-tournament-manager' ); ?></label></td>
-			<td>
-				<?php if ( ! $is_template ) : ?>
-					<a href="<?php echo esc_url( $players_link ); ?>">
-						<?php
-						printf(
-							/* translators: %d: number of players in the section */
-							esc_html__( 'Manage (%d)', 'wp-tournament-manager' ),
-							(int) $player_count
-						);
-						?>
-					</a>
-				<?php endif; ?>
-			</td>
-			<td><button type="button" class="button-link-delete" data-remove-row><?php esc_html_e( 'Remove', 'wp-tournament-manager' ); ?></button></td>
-		</tr>
-		<?php
-	}
-
-	public function handle_save_sections() {
-		$tournament_id = isset( $_POST['tournament_id'] ) ? absint( $_POST['tournament_id'] ) : 0;
-		check_admin_referer( 'wpmtm_save_sections_' . $tournament_id, 'wpmtm_sections_nonce' );
-		$this->require_capability();
-
-		$tournament = WPMTM_Repository::get_tournament( $tournament_id );
-		if ( ! $tournament ) {
-			wp_die( esc_html__( 'Tournament not found.', 'wp-tournament-manager' ) );
-		}
-
-		global $wpdb;
-		$table = WPMTM_Schema::table( 'sections' );
-
-		$rows    = ( isset( $_POST['sections'] ) && is_array( $_POST['sections'] ) ) ? wp_unslash( $_POST['sections'] ) : array();
-		$removed = array();
-		if ( isset( $_POST['removed_sections'] ) ) {
-			$removed = array_filter( array_map( 'absint', explode( ',', sanitize_text_field( wp_unslash( $_POST['removed_sections'] ) ) ) ) );
-		}
-
-		$mismatched  = array();
-		$failed_rows = 0;
-
-		foreach ( $rows as $key => $row ) {
-			$sec_name = isset( $row['sec_name'] ) ? sanitize_text_field( $row['sec_name'] ) : '';
-			$r_system = isset( $row['r_system'] ) ? strtoupper( sanitize_text_field( $row['r_system'] ) ) : 'R';
-			if ( ! in_array( $r_system, array( 'R', 'Q', 'B' ), true ) ) {
-				$r_system = 'R';
-			}
-			$timectl  = isset( $row['timectl'] ) ? sanitize_text_field( $row['timectl'] ) : '';
-			$tot_rnds = isset( $row['tot_rnds'] ) ? max( 0, absint( $row['tot_rnds'] ) ) : 0;
-			// Swiss, Round Robin, and Quad are the real selectable values in
-			// this version (docs/SPEC.md, "Decisions (2026-07-09, round
-			// robin and quads)" and "Decisions (2026-07-10, quads
-			// selectable)"); the other <option>s in the Type select are
-			// rendered disabled, so any other posted value is a
-			// tampered/stale form and falls back to Swiss.
-			$trn_type = isset( $row['trn_type'] ) ? strtoupper( sanitize_text_field( $row['trn_type'] ) ) : 'S';
-			if ( 'S' !== $trn_type && ! WPMTM_Pairing_Aid::is_round_robin_type( $trn_type ) ) {
-				$trn_type = 'S';
-			}
-			$sch_lvl  = isset( $row['sch_lvl'] ) ? sanitize_text_field( $row['sch_lvl'] ) : '';
-			$sch_lvl  = '' !== $sch_lvl ? strtoupper( substr( $sch_lvl, 0, 1 ) ) : null;
-			$gr_prix  = ! empty( $row['gr_prix'] ) ? 'Y' : 'N';
-			$gp_pts   = isset( $row['gp_pts'] ) ? max( 0, absint( $row['gp_pts'] ) ) : 0;
-			$rated    = ! empty( $row['rated'] ) ? 1 : 0;
-			// No FIDE support (owner decision 2026-07-10, docs/SPEC.md
-			// "FIDE flag passthrough - REVERTED"). Always 'N'; the 'fide'
-			// schema column stays in place but is dormant.
-			$fide     = 'N';
-
-			if ( '' === $sec_name && '' === $timectl && 0 === $tot_rnds && ! ctype_digit( (string) $key ) ) {
-				continue; // an unused blank "add" row.
-			}
-
-			$derived = WPMTM_Plugin::derive_r_system( $timectl );
-			if ( null !== $derived && $derived !== $r_system ) {
-				$mismatched[] = '' !== $sec_name ? $sec_name : ( '#' . $key );
-			}
-
-			$data    = array(
-				'sec_name' => $sec_name,
-				'r_system' => $r_system,
-				'timectl'  => $timectl,
-				'trn_type' => $trn_type,
-				'tot_rnds' => $tot_rnds,
-				'sch_lvl'  => $sch_lvl,
-				'gr_prix'  => $gr_prix,
-				'gp_pts'   => $gp_pts,
-				'fide'     => $fide,
-				'rated'    => $rated,
-			);
-			$formats = array( '%s', '%s', '%s', '%s', '%d', '%s', '%s', '%d', '%s', '%d' );
-
-			if ( ctype_digit( (string) $key ) ) {
-				$section_id = (int) $key;
-				if ( in_array( $section_id, $removed, true ) ) {
-					continue;
-				}
-				$result = $wpdb->update( $table, $data, array( 'id' => $section_id, 'tournament_id' => $tournament_id ), $formats, array( '%d', '%d' ) );
-			} else {
-				$data['tournament_id'] = $tournament_id;
-				$data['sec_num']       = WPMTM_Repository::next_sec_num( $tournament_id );
-				$result = $wpdb->insert( $table, $data, array_merge( $formats, array( '%d', '%d' ) ) );
-			}
-
-			if ( false === $result ) {
-				++$failed_rows;
-			}
-		}
-
-		foreach ( $removed as $section_id ) {
-			WPMTM_Repository::delete_section_cascade( $section_id, $tournament_id );
-		}
-		if ( $removed ) {
-			WPMTM_Repository::renumber_sections( $tournament_id );
-		}
-
-		WPMTM_Cache::flush_event_page( (int) $tournament->event_post_id );
-
-		$notice_parts = array();
-		if ( $mismatched ) {
-			$notice_parts[] = sprintf(
-				/* translators: %s: comma-separated list of section names */
-				__( 'Sections saved, but the declared rating system does not match the time control for: %s. Double-check before exporting a rated tournament.', 'wp-tournament-manager' ),
-				implode( ', ', $mismatched )
-			);
-		} else {
-			$notice_parts[] = __( 'Sections saved.', 'wp-tournament-manager' );
-		}
-		if ( $failed_rows > 0 ) {
-			$notice_parts[] = sprintf(
-				/* translators: %d: number of section rows that could not be saved */
-				__( '%d row(s) could not be saved.', 'wp-tournament-manager' ),
-				$failed_rows
-			);
-		}
-		$notice_type = $failed_rows > 0 ? 'warning' : ( $mismatched ? 'warning' : 'success' );
-		$this->set_notice( $notice_type, implode( ' ', $notice_parts ) );
-
-		wp_safe_redirect( add_query_arg( array( 'page' => 'wpmtm-edit', 'id' => $tournament_id ), admin_url( 'admin.php' ) ) );
-		exit;
-	}
-
-	// -----------------------------------------------------------------
-	// Players editor (per section)
-	// -----------------------------------------------------------------
-
-	/**
-	 * When the tournament's show_photos flag is set, each player row gains a
-	 * leading avatar cell, rendered with WPMTM_Frontend_Public::render_avatar()
-	 * - that method is public static with no instance state (see its own
-	 * docblock), so it is called directly here rather than duplicated; the
-	 * column is absent entirely when show_photos is off, matching the public
-	 * standings table and the TD's pairing aid.
-	 */
-	protected function render_players_editor( $tournament, $section ) {
-		$players     = WPMTM_Repository::get_players( $section->id );
-		$tot_rnds    = max( 0, (int) $section->tot_rnds );
-		$show_photos = (bool) $tournament->show_photos;
-		$back_url    = add_query_arg( array( 'page' => 'wpmtm-edit', 'id' => $tournament->id ), admin_url( 'admin.php' ) );
-		?>
-		<div class="wrap wpmtm-wrap">
-			<h1>
-				<?php
-				printf(
-					/* translators: 1: section name, 2: tournament name */
-					esc_html__( 'Players: %1$s - %2$s', 'wp-tournament-manager' ),
-					esc_html( $section->sec_name ),
-					esc_html( $tournament->name )
-				);
-				?>
-			</h1>
-			<p><a href="<?php echo esc_url( $back_url ); ?>">&laquo; <?php esc_html_e( 'Back to sections', 'wp-tournament-manager' ); ?></a></p>
-			<?php $this->render_notices(); ?>
-
-			<div class="notice notice-info inline">
-				<p>
-					<?php esc_html_e( 'The roster for this section normally comes from "Import Registrations" on the tournament screen. Use the form below only to correct individual players by hand (registration is closed once the event starts, so this is a data-correction tool, not a registration path).', 'wp-tournament-manager' ); ?>
-				</p>
-				<p>
-					<?php esc_html_e( 'Pairing numbers (the # column) are assigned automatically, highest rating first and unrated players last; you cannot set them by hand. Before a rated event, double-check each USCF ID and rating against ratings.uschess.org - what is entered here is what gets submitted.', 'wp-tournament-manager' ); ?>
-				</p>
-				<p>
-					<?php esc_html_e( 'Withdrawn marks a player out from a chosen round onward: their score stays frozen where it was, they drop out of pairing and round entry from that point on, and the USCF export fills their remaining rounds with the U (not paired) code automatically. Setting a player back to Active reinstates them safely at any time, since withdrawing never writes any result rows.', 'wp-tournament-manager' ); ?>
-				</p>
-				<p>
-					<?php esc_html_e( 'Family name first is for players whose culture puts the family name first (for example many East Asian names): check this so their name shows family name first everywhere in Tournament Manager. The Name field here still stores LAST,FIRST regardless; this flag only controls how that name is displayed.', 'wp-tournament-manager' ); ?>
-				</p>
-				<p>
-					<?php esc_html_e( 'Players sharing a family key, or sharing a last name, are not paired against each other when suggesting pairings (best effort). The family key is filled in automatically for ETR imports carrying a parent email; edit it here to clear a false positive (unrelated players who happen to share a surname still avoid each other by last name alone, regardless of family key) or to add a false negative (give siblings with different surnames the same key).', 'wp-tournament-manager' ); ?>
-				</p>
-			</div>
-
-			<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>">
-				<?php wp_nonce_field( 'wpmtm_save_players_' . $section->id, 'wpmtm_players_nonce' ); ?>
-				<input type="hidden" name="action" value="wpmtm_save_players">
-				<input type="hidden" name="section_id" value="<?php echo esc_attr( $section->id ); ?>">
-				<input type="hidden" id="wpmtm-removed-players" name="removed_players" value="">
-
-				<table class="wp-list-table widefat fixed striped wpmtm-repeater" id="wpmtm-players-table" data-wpmtm-repeater data-removed-input="wpmtm-removed-players">
-					<thead>
-						<tr>
-							<?php if ( $show_photos ) : ?>
-								<th class="wpmtm-col-photo"><?php esc_html_e( 'Photo', 'wp-tournament-manager' ); ?></th>
-							<?php endif; ?>
-							<th class="wpmtm-col-num"><?php esc_html_e( '#', 'wp-tournament-manager' ); ?></th>
-							<th><?php esc_html_e( 'Name (LAST,FIRST MIDDLE)', 'wp-tournament-manager' ); ?></th>
-							<th><?php esc_html_e( 'USCF ID', 'wp-tournament-manager' ); ?></th>
-							<th><?php esc_html_e( 'State', 'wp-tournament-manager' ); ?></th>
-							<th><?php esc_html_e( 'Rating', 'wp-tournament-manager' ); ?></th>
-							<th><?php esc_html_e( 'Withdrawn', 'wp-tournament-manager' ); ?></th>
-							<th title="<?php echo esc_attr__( 'For players whose culture puts the family name first (for example many East Asian names); this only affects display, not how the name is stored.', 'wp-tournament-manager' ); ?>"><?php esc_html_e( 'Family name first', 'wp-tournament-manager' ); ?></th>
-							<th title="<?php echo esc_attr__( 'Players sharing a family key, or sharing a last name, are not paired against each other when suggesting pairings (best effort).', 'wp-tournament-manager' ); ?>"><?php esc_html_e( 'Family key', 'wp-tournament-manager' ); ?></th>
-							<th></th>
-						</tr>
-					</thead>
-					<tbody>
-					<?php foreach ( $players as $player ) : ?>
-						<?php $this->render_player_row( $player, null, $tot_rnds, $show_photos ); ?>
-					<?php endforeach; ?>
-					</tbody>
-					<template>
-						<?php $this->render_player_row( null, '__INDEX__', $tot_rnds, $show_photos ); ?>
-					</template>
-				</table>
-				<p><button type="button" class="button" data-add-row-for="wpmtm-players-table"><?php esc_html_e( '+ Add player', 'wp-tournament-manager' ); ?></button></p>
-				<?php submit_button( __( 'Save Players', 'wp-tournament-manager' ) ); ?>
-			</form>
-		</div>
-		<?php
-	}
-
-	protected function render_player_row( $player, $index = null, $tot_rnds = 0, $show_photos = false ) {
-		$is_template            = null === $player;
-		$key                    = $is_template ? $index : $player->id;
-		$pair_num               = $is_template ? '' : $player->pair_num;
-		$name                   = $is_template ? '' : $player->name;
-		$mem_id                 = $is_template ? '' : $player->mem_id;
-		$state                  = $is_template ? '' : $player->state;
-		$rating                 = $is_template ? '' : $player->rating;
-		$withdrawn_after_round  = $is_template ? '' : $player->withdrawn_after_round;
-		$photo_id               = $is_template ? null : $player->photo_id;
-		$family_name_first      = $is_template ? false : (bool) $player->family_name_first;
-		$family_key             = $is_template ? '' : (string) $player->family_key;
-		$tot_rnds               = max( 0, (int) $tot_rnds );
-		?>
-		<tr<?php echo $is_template ? '' : ' data-existing-id="' . esc_attr( $key ) . '"'; ?>>
-			<?php if ( $show_photos ) : ?>
-				<td class="wpmtm-avatar-cell">
-					<?php
-					echo WPMTM_Frontend_Public::render_avatar( $photo_id ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- see WPMTM_Frontend_Public::render_avatar()'s docblock.
-					?>
-				</td>
-			<?php endif; ?>
-			<td class="wpmtm-col-num"><?php echo $is_template ? esc_html__( 'auto', 'wp-tournament-manager' ) : esc_html( $pair_num ); ?></td>
-			<td><input type="text" name="players[<?php echo esc_attr( $key ); ?>][name]" value="<?php echo esc_attr( $name ); ?>" placeholder="LAST,FIRST"></td>
-			<td><input type="text" maxlength="8" name="players[<?php echo esc_attr( $key ); ?>][mem_id]" value="<?php echo esc_attr( $mem_id ); ?>"></td>
-			<td><input type="text" maxlength="2" class="small-text" name="players[<?php echo esc_attr( $key ); ?>][state]" value="<?php echo esc_attr( $state ); ?>"></td>
-			<td><input type="text" maxlength="4" class="small-text" name="players[<?php echo esc_attr( $key ); ?>][rating]" value="<?php echo esc_attr( $rating ); ?>"></td>
-			<td>
-				<select name="players[<?php echo esc_attr( $key ); ?>][withdrawn_after_round]">
-					<option value="" <?php selected( '' === (string) $withdrawn_after_round, true ); ?>><?php esc_html_e( 'Active', 'wp-tournament-manager' ); ?></option>
-					<?php for ( $n = 0; $n <= $tot_rnds; $n++ ) : ?>
-						<option value="<?php echo esc_attr( $n ); ?>" <?php selected( (string) $withdrawn_after_round, (string) $n ); ?>>
-							<?php
-							if ( 0 === $n ) {
-								esc_html_e( 'Before round 1', 'wp-tournament-manager' );
-							} else {
-								printf(
-									/* translators: %d: round number */
-									esc_html__( 'After round %d', 'wp-tournament-manager' ),
-									$n
-								);
-							}
-							?>
-						</option>
-					<?php endfor; ?>
-				</select>
-			</td>
-			<td>
-				<label>
-					<input type="checkbox" name="players[<?php echo esc_attr( $key ); ?>][family_name_first]" value="1" <?php checked( $family_name_first ); ?>>
-					<span class="screen-reader-text"><?php esc_html_e( 'Family name first', 'wp-tournament-manager' ); ?></span>
-				</label>
-			</td>
-			<td><input type="text" class="small-text" name="players[<?php echo esc_attr( $key ); ?>][family_key]" value="<?php echo esc_attr( $family_key ); ?>"></td>
-			<td><button type="button" class="button-link-delete" data-remove-row><?php esc_html_e( 'Remove', 'wp-tournament-manager' ); ?></button></td>
-		</tr>
-		<?php
-	}
-
-	public function handle_save_players() {
-		$section_id = isset( $_POST['section_id'] ) ? absint( $_POST['section_id'] ) : 0;
-		check_admin_referer( 'wpmtm_save_players_' . $section_id, 'wpmtm_players_nonce' );
-		$this->require_capability();
-
-		$section = WPMTM_Repository::get_section( $section_id );
-		if ( ! $section ) {
-			wp_die( esc_html__( 'Section not found.', 'wp-tournament-manager' ) );
-		}
-
-		global $wpdb;
-		$table = WPMTM_Schema::table( 'players' );
-
-		$rows    = ( isset( $_POST['players'] ) && is_array( $_POST['players'] ) ) ? wp_unslash( $_POST['players'] ) : array();
-		$removed = array();
-		if ( isset( $_POST['removed_players'] ) ) {
-			$removed = array_filter( array_map( 'absint', explode( ',', sanitize_text_field( wp_unslash( $_POST['removed_players'] ) ) ) ) );
-		}
-
-		$failed_rows = 0;
-
-		foreach ( $rows as $key => $row ) {
-			$name = isset( $row['name'] ) ? sanitize_text_field( $row['name'] ) : '';
-
-			$mem_id = isset( $row['mem_id'] ) ? preg_replace( '/\D+/', '', sanitize_text_field( $row['mem_id'] ) ) : '';
-			$mem_id = substr( $mem_id, 0, 8 );
-
-			$state = isset( $row['state'] ) ? strtoupper( sanitize_text_field( $row['state'] ) ) : '';
-			$state = substr( preg_replace( '/[^A-Z]/', '', $state ), 0, 2 );
-
-			$rating = isset( $row['rating'] ) ? preg_replace( '/\D+/', '', sanitize_text_field( $row['rating'] ) ) : '';
-			$rating = substr( $rating, 0, 4 );
-
-			// Empty string (the "Active" option) means NULL - reinstating a
-			// withdrawn player is always safe, since withdrawing never wrote
-			// any game/bye rows (docs/SPEC.md, withdrawals).
-			$withdrawn_raw         = isset( $row['withdrawn_after_round'] ) ? sanitize_text_field( $row['withdrawn_after_round'] ) : '';
-			$withdrawn_after_round = '' !== $withdrawn_raw ? absint( $withdrawn_raw ) : null;
-
-			// Display-only "family name first" flag: never changes how the
-			// Name field above is stored - still LAST,FIRST - only how it
-			// is later rendered by WPMTM_Name.
-			$family_name_first = ! empty( $row['family_name_first'] ) ? 1 : 0;
-
-			// TD override for WPMTM_Pairing_Suggest::same_family()'s
-			// heuristics (docs/SPEC.md, 2026-07-14): free-text, not an
-			// email field, so sanitize_text_field() rather than
-			// sanitize_email() - a TD may type any shared token for
-			// siblings with different surnames, not necessarily an email
-			// address. Lowercase/trim so it compares the same way
-			// WPMTM_Pairing_Suggest::normalize_family_key() does; blank
-			// clears it back to NULL (no key).
-			$family_key = isset( $row['family_key'] ) ? strtolower( trim( sanitize_text_field( $row['family_key'] ) ) ) : '';
-
-			$is_existing = ctype_digit( (string) $key );
-
-			if ( '' === $name && ! $is_existing ) {
-				continue; // unused blank "add" row.
-			}
-
-			$data    = array(
-				'mem_id'                => '' !== $mem_id ? $mem_id : null,
-				'name'                  => $name,
-				'state'                 => '' !== $state ? $state : null,
-				'rating'                => '' !== $rating ? $rating : null,
-				'withdrawn_after_round' => $withdrawn_after_round,
-				'family_name_first'     => $family_name_first,
-				'family_key'            => '' !== $family_key ? $family_key : null,
-			);
-			$formats = array( '%s', '%s', '%s', '%s', '%d', '%d', '%s' );
-
-			if ( $is_existing ) {
-				$player_id = (int) $key;
-				if ( in_array( $player_id, $removed, true ) ) {
-					continue;
-				}
-				$result = $wpdb->update( $table, $data, array( 'id' => $player_id, 'section_id' => $section_id ), $formats, array( '%d', '%d' ) );
-			} else {
-				$data['section_id'] = $section_id;
-				$data['pair_num']   = WPMTM_Repository::next_pair_num( $section_id );
-				$result = $wpdb->insert( $table, $data, array_merge( $formats, array( '%d', '%d' ) ) );
-			}
-
-			if ( false === $result ) {
-				++$failed_rows;
-			}
-		}
-
-		foreach ( $removed as $player_id ) {
-			WPMTM_Repository::delete_player_cascade( $player_id, $section_id );
-		}
-		if ( $removed ) {
-			WPMTM_Repository::renumber_players( $section_id );
-		}
-
-		$section_tournament = WPMTM_Repository::get_tournament( $section->tournament_id );
-		if ( $section_tournament ) {
-			WPMTM_Cache::flush_event_page( (int) $section_tournament->event_post_id );
-		}
-
-		$message = __( 'Players saved.', 'wp-tournament-manager' );
-		$notice_type = 'success';
-		if ( $failed_rows > 0 ) {
-			$message .= ' ' . sprintf(
-				/* translators: %d: number of player rows that could not be saved */
-				__( '%d row(s) could not be saved.', 'wp-tournament-manager' ),
-				$failed_rows
-			);
-			$notice_type = 'warning';
-		}
-		$this->set_notice( $notice_type, $message );
-		wp_safe_redirect( add_query_arg( array( 'page' => 'wpmtm-edit', 'id' => $section->tournament_id, 'section_id' => $section_id ), admin_url( 'admin.php' ) ) );
+		// This handler is shared by both the admin edit page's Lock/Unlock
+		// button and the front-end event page's copy of it
+		// (WPMTM_Frontend_Public::render_td_command_row()) - 2026-07-21: a
+		// front-end click was previously always redirected into wp-admin
+		// even though the event page it came from could show the new state
+		// just as well. wp_get_referer() sends the TD back to whichever
+		// page they actually clicked from, falling back to the admin edit
+		// page only when there is no referer to return to.
+		wp_safe_redirect( wp_get_referer() ? wp_get_referer() : add_query_arg( array( 'page' => 'wpmtm-edit', 'id' => $tournament_id ), admin_url( 'admin.php' ) ) );
 		exit;
 	}
 

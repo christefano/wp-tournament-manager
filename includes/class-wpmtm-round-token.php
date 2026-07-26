@@ -9,7 +9,7 @@ if ( ! defined( 'ABSPATH' ) ) {
  * (compact decimal, no zero padding) + color letter for played games,
  * right-padded with spaces to 7 chars.
  *
- * Legend recovered from the US Chess TD/Affiliate FAQ (docs/SPEC.md):
+ * Legend recovered from the USCF TD/Affiliate FAQ (docs/SPEC.md):
  * - W/L/D: played, rated - opponent + color required.
  * - B/H/U: byes / not paired - opponent is always 0, no color.
  * - X/F/Z: forfeits - opponent required, no color (per docs/SPEC.md's residual
@@ -46,12 +46,12 @@ class WPMTM_Round_Token {
 		$result = strtoupper( (string) $result );
 
 		if ( in_array( $result, self::UNSUPPORTED, true ) ) {
-			throw new InvalidArgumentException( "round result code '$result' is unsupported (correspondence-only)" );
+			throw new InvalidArgumentException( "round result code '$result' is unsupported (correspondence-only)" ); // phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- caught internally (WPMTM_USCF_Validator::try_decode()/check_round_tokens()); getMessage() is escaped with esc_html() at the point it is finally echoed, never printed raw.
 		}
 
 		if ( in_array( $result, self::NO_OPPONENT, true ) ) {
 			if ( 0 !== (int) $opponent ) {
-				throw new InvalidArgumentException( "round result '$result' must have opponent 0 (bye/unpaired)" );
+				throw new InvalidArgumentException( "round result '$result' must have opponent 0 (bye/unpaired)" ); // phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- caught internally, see note above.
 			}
 			$token = $result . '0';
 		} elseif ( in_array( $result, self::FORFEIT, true ) ) {
@@ -59,15 +59,15 @@ class WPMTM_Round_Token {
 		} elseif ( in_array( $result, self::PLAYED, true ) ) {
 			$color = strtoupper( (string) $color );
 			if ( 'W' !== $color && 'B' !== $color ) {
-				throw new InvalidArgumentException( "round result '$result' requires color 'W' or 'B'" );
+				throw new InvalidArgumentException( "round result '$result' requires color 'W' or 'B'" ); // phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- caught internally, see note above.
 			}
 			$token = $result . self::validate_opponent( $opponent ) . $color;
 		} else {
-			throw new InvalidArgumentException( "unknown round result code '$result'" );
+			throw new InvalidArgumentException( "unknown round result code '$result'" ); // phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- caught internally, see note above.
 		}
 
 		if ( strlen( $token ) > self::WIDTH ) {
-			throw new InvalidArgumentException( "encoded round token exceeds " . self::WIDTH . " chars: '$token'" );
+			throw new InvalidArgumentException( "encoded round token exceeds " . self::WIDTH . " chars: '$token'" ); // phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- caught internally, see note above.
 		}
 
 		return str_pad( $token, self::WIDTH, ' ', STR_PAD_RIGHT );
@@ -75,7 +75,7 @@ class WPMTM_Round_Token {
 
 	protected static function validate_opponent( $opponent ) {
 		if ( ! is_numeric( $opponent ) || (int) $opponent < 1 ) {
-			throw new InvalidArgumentException( 'opponent pairing number must be a positive integer, got: ' . var_export( $opponent, true ) );
+			throw new InvalidArgumentException( 'opponent pairing number must be a positive integer, got: ' . var_export( $opponent, true ) ); // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_var_export,WordPress.Security.EscapeOutput.ExceptionNotEscaped -- var_export() builds the exception message (not debug output left in), and the message is caught internally, escaped with esc_html() only when finally echoed.
 		}
 		return (string) (int) $opponent;
 	}
@@ -95,12 +95,12 @@ class WPMTM_Round_Token {
 		$rest   = substr( $trimmed, 1 );
 
 		if ( in_array( $result, self::UNSUPPORTED, true ) ) {
-			throw new InvalidArgumentException( "round result code '$result' is unsupported (correspondence-only)" );
+			throw new InvalidArgumentException( "round result code '$result' is unsupported (correspondence-only)" ); // phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- caught internally, see the encode() note above.
 		}
 
 		if ( in_array( $result, self::NO_OPPONENT, true ) ) {
 			if ( '0' !== $rest ) {
-				throw new InvalidArgumentException( "malformed token for '$result': '$token'" );
+				throw new InvalidArgumentException( "malformed token for '$result': '$token'" ); // phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- caught internally, see the encode() note above.
 			}
 			return array(
 				'result'   => $result,
@@ -111,7 +111,7 @@ class WPMTM_Round_Token {
 
 		if ( in_array( $result, self::FORFEIT, true ) ) {
 			if ( '' === $rest || ! ctype_digit( $rest ) ) {
-				throw new InvalidArgumentException( "malformed token for '$result': '$token'" );
+				throw new InvalidArgumentException( "malformed token for '$result': '$token'" ); // phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- caught internally, see the encode() note above.
 			}
 			return array(
 				'result'   => $result,
@@ -124,7 +124,7 @@ class WPMTM_Round_Token {
 			$color = strtoupper( substr( $rest, -1 ) );
 			$num   = substr( $rest, 0, -1 );
 			if ( ( 'W' !== $color && 'B' !== $color ) || '' === $num || ! ctype_digit( $num ) ) {
-				throw new InvalidArgumentException( "malformed token for '$result': '$token'" );
+				throw new InvalidArgumentException( "malformed token for '$result': '$token'" ); // phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- caught internally, see the encode() note above.
 			}
 			return array(
 				'result'   => $result,
@@ -133,6 +133,6 @@ class WPMTM_Round_Token {
 			);
 		}
 
-		throw new InvalidArgumentException( "unknown round result code '$result'" );
+		throw new InvalidArgumentException( "unknown round result code '$result'" ); // phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- caught internally, see the encode() note above.
 	}
 }
