@@ -1,16 +1,20 @@
 # Changelog
 
+## 1.3.1
+
+README changes only (no new features or bug fixes) clarifying CSV export, how to handle disqualifications, and that Tournament Manager can be run locally, on your own server, or on cheap shared hosting.
+
 ## 1.3
 
-Huge update. Many, many bug fixes and UI enhancements, better validation with the USCF API, a new Pairings tab, a "Lock this tournament and mark it as complete" feature, a better TD command bar (Create tournament, Export, Print, etc.) on event pages, and the setup guide has been completely rebuilt.
+Many, many bug fixes and UI enhancements, better validation with the USCF API, a new Pairings tab, a "Lock this tournament and mark it as complete" feature, a better TD command bar (Create tournament, Export, Print, etc.) on event pages, and the setup guide has been completely rebuilt.
 
 I hope you enjoy.
 
-Please note: The only game-breaking change when upgrading from an earlier version is that you may need ensure your affiliate ID, chief TD ID, and assistant TD ID (if you have them set) are accurate on the Tournament Manager settings page. The TD's Safe Play certificate status is unchanged.
-
-Be sure to update to the latest versions of [ETECF](https://github.com/christefano/wp-etecf) (v5.2.6) and [ETR](https://github.com/christefano/wp-etr) (v5.2.7), as well.
+Please note: The only game-breaking change when upgrading from an earlier version is that you may need ensure your affiliate ID, chief TD ID, and assistant TD ID (if you have them set) are accurate on the Tournament Manager settings page. The TD's Safe Play certificate status is unchanged. Be sure to update to the latest versions of [ETECF](https://github.com/christefano/wp-etecf) and [ETR](https://github.com/christefano/wp-etr), as well.
 
 On to the updates:
+
+- Updated documentation and screenshots. Who doesn't love screenshots?
 
 - Feature: The setup guide has been massively upgraded. The setup guide's steps are now Settings, Tournament, Roster, Sections, Rounds, Export, and Finish, and they all include hover tips and an info icon link to open a small browser window to the README "Setup guide" section with more detail.
 
@@ -22,11 +26,11 @@ On to the updates:
 
 - Feature: The section name field in the sections editor now suggests the distinct section names that registrants already chose in ETECF fields, e.g. Open, Scholastic Youth Unrated, etc.
 
-- Feature: The "Suggest pairings" button now supports a shared family key (in the tournament's sections editor). Enter a family key to help the pairing engine go out of its way not to pair players who share the same family key. This is done by checking for siblings who share the last name and parents and children based on the purchaser of a ticket and (supposed) parents and children where the parent is a purchaser of an Events Tickets ticket and the child has a parent email attached to their registration via ETECF. This isn't perfect, so check the pairing aid, especially if the ticket purchaser is a group leader or not a parent of children participating in a tournament.
+- Feature: "Suggest pairings" pairing engine now supports a shared family key (in the tournament's sections editor). Enter a family key to help the pairing engine go out of its way not to pair players who share the same family key. This is done by checking for siblings who share the last name and parents and children based on the purchaser of a ticket and (supposed) parents and children where the parent is a purchaser of an Events Tickets ticket and the child has a parent email attached to their registration via ETECF. This isn't perfect, so check the pairing aid, especially if the ticket purchaser is a group leader or not a parent of children participating in a tournament.
 
 - Feature: The tournaments listed on the All Tournament page now show their current status ("Rounds not yet all entered", "Ready to lock and mark as complete", etc.). **Be sure to lock your tournaments when they've been completed** so their status no longer gets checked or there may be performance issues with dozens or hundreds of tournaments on this page.
 
-- Enhancement: Updated documentation and screenshots. Who doesn't love screenshots?
+- Enhancement: Updated screenshots!
 
 - Enhancement: The setup guide now shows a checkmark and helpful "Status" and "Next step" guidance to help orient newcomers to Tournament Manager.
 
@@ -48,7 +52,7 @@ On to the updates:
 
 - Performance: Tournaments on the All Tournaments page that have been locked have no performance hit. **Be sure to lock your tournaments when they've been completed** or the All Tournaments page runs 3 database queries per tournament when loading this page.
 
-## 1.2
+- ## 1.2
 
 - Private test release. Features, bug fixes, and performance fixes for chess clubs who've shown interest.
 
