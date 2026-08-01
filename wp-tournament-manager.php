@@ -2,10 +2,10 @@
 /**
  * Plugin Name: Tournament Manager
  * Description: Club-level USCF chess tournament management: setup guide, roster import, pairing aid, round results, standings, and USCF DBF export.
- * Version: 1.3
+ * Version: 1.4
  * Author: Christefano Reyes
  * Plugin URI: https://github.com/christefano/wp-tournament-manager
- * Author URI: https://macchess.org
+ * Author URI: https://github.com/christefano/
  * Requires at least: 5.0
  * Requires PHP: 7.4
  * Tested up to: 6.7
@@ -18,7 +18,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'WPMTM_VERSION', '1.3' );
+define( 'WPMTM_VERSION', '1.4' );
 define( 'WPMTM_PLUGIN_FILE', __FILE__ );
 define( 'WPMTM_PLUGIN_DIR', plugin_dir_path( __FILE__ ) );
 define( 'WPMTM_PLUGIN_URL', plugin_dir_url( __FILE__ ) );
@@ -73,10 +73,22 @@ require_once WPMTM_PLUGIN_DIR . 'includes/class-wpmtm-admin-sections.php';
 require_once WPMTM_PLUGIN_DIR . 'includes/class-wpmtm-admin-players.php';
 require_once WPMTM_PLUGIN_DIR . 'includes/class-wpmtm-admin-import.php';
 require_once WPMTM_PLUGIN_DIR . 'includes/class-wpmtm-admin-export.php';
+require_once WPMTM_PLUGIN_DIR . 'includes/trait-wpmtm-wizard-steps.php';
+require_once WPMTM_PLUGIN_DIR . 'includes/trait-wpmtm-wizard-panel.php';
+require_once WPMTM_PLUGIN_DIR . 'includes/trait-wpmtm-wizard-readme.php';
 require_once WPMTM_PLUGIN_DIR . 'includes/class-wpmtm-wizard.php';
+require_once WPMTM_PLUGIN_DIR . 'includes/trait-wpmtm-frontend-public-standings.php';
+require_once WPMTM_PLUGIN_DIR . 'includes/trait-wpmtm-frontend-public-wallchart.php';
+require_once WPMTM_PLUGIN_DIR . 'includes/trait-wpmtm-frontend-public-pairings.php';
+require_once WPMTM_PLUGIN_DIR . 'includes/trait-wpmtm-frontend-public-card.php';
 require_once WPMTM_PLUGIN_DIR . 'includes/class-wpmtm-frontend-public.php';
+require_once WPMTM_PLUGIN_DIR . 'includes/trait-wpmtm-frontend-td-panel.php';
+require_once WPMTM_PLUGIN_DIR . 'includes/trait-wpmtm-frontend-td-roundform.php';
+require_once WPMTM_PLUGIN_DIR . 'includes/trait-wpmtm-frontend-td-handler.php';
 require_once WPMTM_PLUGIN_DIR . 'includes/class-wpmtm-frontend-td.php';
 require_once WPMTM_PLUGIN_DIR . 'includes/class-wpmtm-frontend.php';
+// GitHub release update notifications (this plugin is not on WordPress.org).
+require_once WPMTM_PLUGIN_DIR . 'includes/class-wpmtm-updater.php';
 
 register_activation_hook( __FILE__, array( 'WPMTM_Schema', 'activate' ) );
 
@@ -94,6 +106,7 @@ register_activation_hook( __FILE__, array( 'WPMTM_Schema', 'activate' ) );
  */
 add_action( 'plugins_loaded', function () {
 	WPMTM_Schema::maybe_upgrade();
+	WPMTM_Updater::init();
 	WPMTM_Plugin::instance();
 	WPMTM_Settings::instance();
 	WPMTM_Admin::instance();

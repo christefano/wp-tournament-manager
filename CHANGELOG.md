@@ -1,8 +1,40 @@
 # Changelog
 
+## 1.4
+
+Bug fixes, several enhancements, a few security fixes, some internal refactoring, and corrections to the README throughout. Updating from 1.3.1 or earlier is recommended.
+
+- Enhancement: TDs can now click any player's name on an event's Standings, Pairings, or Wall chart tabs to open a player card (like the one on the event's Registrations tab) showing a player's registration details, an Email button to contact them, and any admin notes. The public sees just the names and not any links to player cards.
+
+- Enhancement: TDs can now see admin notes (if there's an `admin_note` field attached to events using ETECF **and** an admin note exists) on the event's attendee list, not just full WordPress administrators. Editing a note still requires an administrator.
+
+- Enhancement: Imported players now remember which registration they came from so a player can be linked back to their registration. Players imported from a CSV or added manually start out unlinked. Tournament Manager links them on its own by USCF ID the next time a TD opens the event page, so no re-import is needed. A player with no USCF ID, or one whose ID matches two registrants, stays unlinked. Their player card still opens, just without the registration links.
+
+- Enhancement: Removing a board that already has a saved result now asks for confirmation since saving the round afterward deletes both players' recorded result for that board.
+
+- Enhancement: The setup guide's Finish step now has a link to draft a tournament recap post (if the tournament is locked and marked as complete).
+
+- Enhancement: Tournament Manager now tells you when a new version is available, using [Plugin Update Checker](https://github.com/YahnisElsts/plugin-update-checker). Updates appear under Dashboard -> Updates and on the Plugins page like any other plugin, and your tournaments, sections, players, and results are untouched by an update. Nothing extra to install. Add `define( 'WPMTM_DISABLE_UPDATE_CHECK', true );` to `wp-config.php` on a development or staging copy that should never check.
+
+- Enhancement: The Pairings tab now shows profile pictures next to each player when the tournament has "Show profile pictures" turned on, matching the Standings and Wall chart tabs. They appear on the printed pairing sheet too, so a TD can match a name to a face at the board.
+
+- Bug fix: Standings tiebreaks now follow the USCF rulebook's 34E rules in four places that they didn't: byes, forfeits, and rounds missed *after a withdrawal* now count as unplayed games. Plus, minus, and even scores are judged against the section's maximum possible score. Sections of nine or more rounds discard two opponent scores per side. Cumulative deducts for an unplayed draw. Players who withdrew or entered late were affected most.
+
+- Bug fix: Re-saving a round no longer drops a withdrawn player's saved bye. If a player was given a bye in a round and then later withdrawn as of an earlier round, that bye is now shown as a read-only "saved bye" line and kept when the round is saved again instead of silently disappearing.
+
+- Bug fix: A withdrawal backdated to before a round the player actually played no longer blanks that player's name out of the round's White / Black dropdowns. The recorded games were always intact, but the round-entry form showed "-- select --" as if the pairing had been lost.
+
+- Security fix: Tournaments created with the one-click "Create tournament" button are now owned by the TD who clicked it. Previously they were created without an owner, which made them manageable by every TD.
+
+- Security fix: The roster import, USCF / CSV export, sections editor, and roster editor handlers now verify that the TD can manage the target tournament. Previously, any user with the Tournament Manager permission could import into, export, or edit the sections and players of another TD's tournament.
+
+- Security fix: CSV export cells that begin with `=`, `+`, `-`, or `@` now get a leading apostrophe so a registrant-supplied name can't be run as a spreadsheet formula when the export is opened.
+
+- Refactoring: Code for the setup guide, the round-entry panel, and the public standings, wall chart, and pairings tabs has been split into smaller files. Several small duplicated blocks have been consolidated into shared helpers. The pairing aid now builds its lookups in a single pass. The section and player editors' Remove buttons now share one event listener instead of binding a separate one to every row.
+
 ## 1.3.1
 
-README changes only (no new features or bug fixes) clarifying CSV export, how to handle disqualifications, and that Tournament Manager can be run locally, on your own server, or on cheap shared hosting.
+- README changes only (no new features or bug fixes) clarifying CSV export, how to handle disqualifications, and that Tournament Manager can be run locally, on your own server, or on cheap shared hosting.
 
 ## 1.3
 
@@ -52,7 +84,7 @@ On to the updates:
 
 - Performance: Tournaments on the All Tournaments page that have been locked have no performance hit. **Be sure to lock your tournaments when they've been completed** or the All Tournaments page runs 3 database queries per tournament when loading this page.
 
-- ## 1.2
+## 1.2
 
 - Private test release. Features, bug fixes, and performance fixes for chess clubs who've shown interest.
 

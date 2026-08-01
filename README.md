@@ -1,6 +1,6 @@
 # Tournament Manager
 
-A free, truly open-source WordPress plugin for running club-level USCF chess tournaments end to end: setup guide, roster import, pairing aid, round-by-round result entry, standings with USCF tiebreaks, and USCF DBF export for upload to [ratings.uschess.org](https://ratings.uschess.org), and optional CSV export of tournament results.
+A free, truly open-source WordPress plugin for running club-level USCF chess tournaments end to end: setup guide, roster import, pairing aid, round-by-round result entry, standings with USCF tiebreaks, USCF DBF export for upload to [ratings.uschess.org](https://ratings.uschess.org), and optional CSV export of tournament results.
 
 No monthly fees and no desktop software needed. Run locally, on your own server, or on cheap shared hosting. You can actually run entire rated and unrated tournaments from your phone using your existing WordPress login, and multiple tournament directors can even run multiple tournaments simultaneously.
 
@@ -21,17 +21,17 @@ Along with WordPress itself, Tournament Manager uses several open source plugins
 - [Event Tickets Extra Custom Fields](https://github.com/christefano/wp-etecf) (ETECF)
 - [Event Tickets Registrations](https://github.com/christefano/wp-etr) (ETR)
 
-Tournament Manager pulls in a club's existing online registration from ET (enhanced with extra custom fields from ETECF) and straight into a tournament manager with sections, pairings, wall charts, standings, and final results. ET and ETECF are standalone plugins by [the same developer](https://github.com/christefano/) as Tournament Manager (TM), and TM builds on top of them.
+Tournament Manager pulls in a club's existing online registration from ET (enhanced with extra custom fields from ETECF) and straight into a tournament manager with sections, pairings, wall charts, standings, and final results. ETECF and ETR are standalone plugins by [the same developer](https://github.com/christefano/) as Tournament Manager (TM), and TM builds on top of them.
 
 ## Features
 
 **Registration import**
 
-- Bring a roster in from ETR's "Pairing export" CSV, a roster uploaded manually, or (with ETR 5.2.3+) pulled straight over with one click with the "Create tournament" button on the event's Registrations tab.
+- Bring a roster in from ETR's "Pairing export" CSV, a roster uploaded manually, or (with ETR 5.2.4+) pulled straight over with one click with the "Create tournament" button on the event's Registrations tab.
 - Players marked "No-show" on their player card in ETR in advance of the import are skipped and aren't included in the tournament roster.
 - A USCF ID can be entered during event registration and is imported by Event Tickets Registrations (ETR).
 - Tournament sections can be marked as rated or unrated, and sections can be split into 4-player round robin quads during import.
-- During registration, a registrant is shown to the tournament director (TD) in the roster editor.
+- A registrant's details entered during registration are shown to the tournament director (TD) in the roster editor.
 - Registrants can request a bye during registration using an "Additional info" field created by ETECF.
 
 **Section types**
@@ -47,21 +47,23 @@ Tournament Manager pulls in a club's existing online registration from ET (enhan
 
 **Standings**
 
-- Support for all four USCF rulebook 34E tiebreaks, in order: Modified Median, Solkoff, Cumulative, and Cumulative of Opposition, falling back to rating and then name.
-- Shown automatically on the linked calendar event page (managed by The Events Calender, or ET) on the Standings tab and available anywhere via the `[wpmtm_standings]` shortcode (you can add `tournament="123"`, e.g. `[wpmtm_standings tournament="123"]`,  to point at a specific tournament).
+- Support for all four USCF rulebook 34E tiebreaks, in order: Modified Median, Solkoff, Cumulative, and Cumulative of Opposition. Anyone still tied after all four is genuinely tied: divide cash prizes evenly, and settle an indivisible prize with a playoff or a coin flip (rule 34C). Standings then order those players by rating and then name purely to keep the table from reshuffling between page loads, which is not a tiebreak and shouldn't be read as one.
+- Unplayed games follow the USCF rulebook. For Modified Median and Solkoff, a bye, a forfeit, or a round missed after a withdrawal counts as 0.5 toward an opponent's score and as 0 toward the player's own. Plus, minus, and even scores are judged against the section's maximum possible score, so a player who withdrew or entered late still lands in the right band. Sections of nine or more rounds discard two opponent scores per side instead of one. Cumulative and Cumulative of Opposition apply their own unplayed-game deductions.
+- Shown automatically on the linked calendar event page (managed by The Events Calendar, or TEC) on the Standings tab and available anywhere via the `[wpmtm_standings]` shortcode (you can add `tournament="123"`, e.g. `[wpmtm_standings tournament="123"]`, to point at a specific tournament).
 - Note that the event page's Standings tab is the official live view and that a shortcode placed elsewhere can lag behind it until that page's own cache entry expires.
 
 **Pairings**
 
-- Tournament directors can print a pairing sheet, and a public Pairings tab on the event page provides the same information and lets players look up their own board, opponent, and color for the current round. Each section (whether printed and online) shows a board list with board number, White, Black, the result once it's in, and any byes listed.
-- A round's pairings shows which players are seated at a board or given a bye. A round becomes visible to everyone on the event page's Pairings tab immediately after a TD saves it.
+- Tournament directors can print a pairing sheet, and a public Pairings tab on the event page provides the same information and lets players look up their own board, opponent, and color for the current round. Each section (whether printed or online) shows a board list with board number, White, Black, the result once it's in, and any byes listed.
+- A round's pairings show which players are seated at a board or given a bye. A round becomes visible to everyone on the event page's Pairings tab immediately after a TD saves it.
+- A tournament director can click a player's name on the Standings, Pairings, or Wall chart tab to open a player card with a link to edit their registration, an Email button, and their admin note; the public sees plain names only.
 
 **USCF export**
 
 - Tournament Manager provides a clean report export as a zip containing `THEXPORT.DBF`, `TSEXPORT.DBF`, and `TDEXPORT.DBF` files that are ready to upload to [ratings.uschess.org](https://ratings.uschess.org). This is a manual upload in order to keep Tournament Manager lean and mean, but submitting directly to USCF may be added in the future if I get access to the USCF MUIR API v2 currently under development.
-- A readiness report runs a pre-export validator against the tournament's rated sections and helpfully explains errors and warnings. Errors block the USCF and CVS downloads, and warnings don't.
-- The readiness report also re-checks the Chief and Assistant TD's USCF membership and Safe Play certification with the USCF API on download. A lapsed TD or an expired Safe Play certification for a rated tournament will result in an error that blocks the download, since USCF would reject a submission anyway. A player membership problem stays as a warning to give players time to renew their USCSF membership.
-- If the USCF API can't be reached to check a TD, it's a notice and doesn't block the USCF export, so an outage or spotty WiFi at a tournament venue never leaves a player with a valid TD stranding.
+- A readiness report runs a pre-export validator against the tournament's rated sections and helpfully explains errors and warnings. Errors block the USCF and CSV downloads, and warnings don't.
+- The readiness report also re-checks the Chief and Assistant TD's USCF membership and Safe Play certification with the USCF API on download. A lapsed TD or an expired Safe Play certification for a rated tournament will result in an error that blocks the download, since USCF would reject a submission anyway. A player membership problem stays as a warning to give players time to renew their USCF membership.
+- If the USCF API can't be reached to check a TD, it's a notice and doesn't block the USCF export, so an outage or spotty WiFi at a tournament venue never strands a tournament that has a valid TD.
 
 **CSV export**
 
@@ -71,14 +73,14 @@ Tournament Manager pulls in a club's existing online registration from ET (enhan
 **USCF status validation**
 
 - Player registrations are checked automatically during registration, when "Automatically check registrant memberships and ratings with USCF" is enabled on Tournament Manager's settings page, and the tournament has rated sections. If their USCF membership isn't active through the event's last day, they see a heads up on the order confirmation page.
-- If "Automatically check registrants" is disabled, checks are skipped entirely. Nothing will be saved or blocked either way. This is also skipped silently if the USCF API is slow or unresponsive, so it doesn't affects checkout.
-- The same toggle also controls the rating sync: when on, the registrant's self-entered USCF rating is checked with USCF, and their rating is checked, as well (Regular preferred, Quick as a fallback).
-- A "Validate with USCF" button in Settings and on the tournament edit page can check the club affiliate ID plus each TD's membership, TD certification, and Safe Play certification status. Results show PASS or FAIL per person with the reason spelled out ("Expired 2025-01-31", "Not a certified TD", "No Safe Play certification on file") with a "renew soon" heads up when something passes but expires within 30 days of the tournament's last day. Other than the DBF export, nothing in Tournament Manager is never blocked by a validation result. Saving a tournament with a lapsed TD shows a warning and export isn't blocked, which gives a TD time to renew their club affiliate ID, USCF membership, or Safe Play certification.
+- If "Automatically check registrants" is disabled, checks are skipped entirely. Nothing will be saved or blocked either way. This is also skipped silently if the USCF API is slow or unresponsive, so it doesn't affect checkout.
+- The same toggle also controls the rating sync: when on, the registrant's self-entered USCF rating is replaced with the official USCF rating (Regular preferred, Quick as a fallback).
+- A "Validate with USCF" button in Settings and on the tournament edit page can check the club affiliate ID plus each TD's membership, TD certification, and Safe Play certification status. Results show PASS or FAIL per person with the reason spelled out ("Expired 2025-01-31", "Not a certified TD", "No Safe Play certification on file") with a "renew soon" heads up when something passes but expires within 30 days of the tournament's last day. Other than the DBF export, nothing in Tournament Manager is ever blocked by a validation result. Saving a tournament with a lapsed TD shows a warning and export isn't blocked, which gives a TD time to renew their club affiliate ID, USCF membership, or Safe Play certification.
 
 **Settings**
 
 - One Settings page for the USCF club affiliate ID, default Chief TD member ID, Assistant TD member ID, default city / state / ZIP for new tournaments, time control presets, whether registrants are automatically checked (memberships and ratings) with USCF at registration, and whether tournament data is deleted or kept on uninstall (default is off, so data is kept by default).
-- "Automatically check registrant memberships and ratings with USCF" is enabled by default and does two things at registration: it warns a registrant on their ticket order confirmation page if their USCF membership isn't active through the event's last day, and it pulls the official USCF rating (Regular preferred, Quick as a fallback) into the registrant's rating field. The USCF MUIR API v1 is unsupported by USCF, though, and it may stop working in the future if it's replaced by the MUIR API v2 currently in development. If it ever misbehaves, turn this off. The manual "Validate players" and "Validate with USCF" buttons also checks on demand regardless of this setting, so a club that turns it off is never without a way to check.
+- "Automatically check registrant memberships and ratings with USCF" is enabled by default and does two things at registration: it warns a registrant on their ticket order confirmation page if their USCF membership isn't active through the event's last day, and it pulls the official USCF rating (Regular preferred, Quick as a fallback) into the registrant's rating field. The USCF MUIR API v1 is unsupported by USCF, though, and it may stop working in the future if it's replaced by the MUIR API v2 currently in development. If it ever misbehaves, turn this off. The manual "Validate players" and "Validate with USCF" buttons also check on demand regardless of this setting, so a club that turns it off is never without a way to check.
 - In each individual tournament's settings, a different club affiliate ID and Chief and Assistant TD IDs can be set, and this allows Tournament Manager to run rated tournaments for multiple clubs. There's a "Use default" button that copies the matching Settings into that field with one click. The DBF export and the TD status checks use what's set on the tournament, and a blank field is genuinely blank.
 
 **FIDE flag**
@@ -89,21 +91,21 @@ Tournament Manager pulls in a club's existing online registration from ET (enhan
 
 - A per-tournament "Show profile pictures" toggle adds a player profile photo to the public standings table, the wall chart, and the TD's pairing aid.
 - Photos are off by default and can be toggled on and off (useful for youth tournaments or if registrants upload inappropriate photos).
-- Photos come from the registrant's event registration (ETR 5.2.3 / ETECF 5.2.3 or newer), are carried in automatically by the one-click "Create tournament" button on an event's Registrations tab, and are saved in the WordPress media library for reuse across multiple registrations, tournament recap blog posts, and so on.
+- Photos come from the registrant's event registration (ETR 5.2.4 / ETECF 5.2.3 or newer), are carried in automatically by the one-click "Create tournament" button on an event's Registrations tab, and are saved in the WordPress media library for reuse across multiple registrations, tournament recap blog posts, and so on.
 - Players imported from a CSV or with no photo on file get a boring profile picture instead.
 - A new tournament created from an event defaults the "Show profile pictures" toggle to match that event's own "Show photos" setting in the event's meta box.
 
 **WP-CLI**
 
-- `wp wpmtm validate players|tds|affiliate|all`, each accepting `--tournament=<id>` (or `--event=<id>` for players/affiliate) and `--format=json`, run the same USCF checks the admin screens use from the command line. This is handy for a cron job, a pre-submission sanity check, or if a roster is particularly large. Any check that FAILs will with an anonymous value that is zero (anon-zero). If the USCF is unreachable TM will report that, but this doesn't by itself fail the command.
+- `wp wpmtm validate players|tds|affiliate|all`, each accepting `--tournament=<id>` (or `--event=<id>` for players/affiliate) and `--format=json`, run the same USCF checks the admin screens use from the command line. This is handy for a cron job, a pre-submission sanity check, or if a roster is particularly large. Any check that fails exits with a non-zero exit code. If the USCF is unreachable TM will report that, but this doesn't by itself fail the command.
 
 **Performance**
 
 - Assuming Tournament Manager is running on a publicly-accessible website, everything the general public sees (a saved round, a withdrawal, a settings change) flushes that event page across whichever page caching plugin is active (W3 Total Cache, WP Super Cache, WP Rocket, and LiteSpeed Cache).
-- TD-only pages are never cached. So long as a compatible caching plugin is being used, the public always sees a cached page when using a supported caching plugin.
+- TD-only pages are never cached. The public always sees a cached page, so long as a supported caching plugin is active.
 - Using ETR's "Demo mode", Tournament Manager has been performance tested up to 200 players with 5 rounds. In a test with 100 players and 5 rounds, database queries were under 10ms (40ms for the USCF export), memory around 2MB, and page size was just 81KB. Demo mode draws from a pool of 50 real, currently-active US Chess members managed by Tournament Manager (see "Test player pool" below), so those test registrants pass the same USCF checks a real roster does.
 - Note that putting hundreds of players in the same section will have a performance cost for TDs. Tournaments don't really ever have mega sections, though, so this would never happen in reality.
-- The All Tournaments page is the only truly heavy page because it checks the status of every tournament (3 database queries per each unlocked tournament) and suggests next steps for the TD. For this reason, it's important to **lock tournaments when they're over** so the All Tournaments page doesn't unnecessarily check their status.
+- The All Tournaments page is the only truly heavy page because it checks the status of every tournament (3 database queries per unlocked tournament) and suggests next steps for the TD. For this reason, it's important to **lock tournaments when they're over** so the All Tournaments page doesn't unnecessarily check their status.
 
 **USCF API calls and caching**
 
@@ -119,7 +121,7 @@ The USCF MUIR API v1 behind all of the membership and TD checks is officially un
 
 **Test player pool**
 
-- Tournament Manager provides a pool of 50 real, currently-active US Chess members with their real member IDs and their real current Regular ratings, in `includes/wpmtm-test-players.php`. These are public, competitive players (the country's highest-rated tournament players, at least according to the USCF ratings API), and every ID and rating was verified individually against the API.
+- Tournament Manager provides a pool of 50 real, currently-active USCF members with their real member IDs and current Regular ratings. These are the highest-rated tournament players, at least according to the USCF ratings API, and every ID and rating was verified individually against the API as of June, 2026.
 - The test player pool is in TM and not ETR because it's for tournament testing, not registration testing. ETR's "Demo mode" reads it from TM when generating test registrants, and if TM isn't active, Demo mode will say so.
 - Real IDs are the whole point: test registrants generated from this pool make it possible to test the same player management, round entry, USCF membership and rating verification, and export validation that a real roster does.
 
@@ -151,7 +153,7 @@ A quick tour of a tournament with test data from setup to USCF upload. Click any
 
 [![Wall chart](screenshots/wall-chart.png)](screenshots/wall-chart.png) _Wall chart - each player's opponent and result with a running score, round by round._
 
-[![USCF export](screenshots/uscf-export.png)](screenshots/uscf-export.png) _CSV and USCF export - The CSV export contains the results for all sections (rated and unrated) and can be imported into other tournament management software. The USCF export runs a readiness report and validates the rated sections, then downloads the three-DBF files (THEXPORT, TSEXPORT, and TDEXPORT) that can each be uploaded to ratings.uschess.org._
+[![USCF export](screenshots/uscf-export.png)](screenshots/uscf-export.png) _CSV and USCF export - The CSV export contains the results for all sections (rated and unrated) and can be imported into other tournament management software. The USCF export runs a readiness report and validates the rated sections, then downloads the three DBF files (THEXPORT, TSEXPORT, and TDEXPORT) that can each be uploaded to ratings.uschess.org._
 
 ## Installation
 
@@ -171,7 +173,7 @@ First, an event for the tournament needs to exist (using The Events Calendar, or
 - Click "Create tournament" right on the event's Registrations tab, or upload ETR's "Pairing export" CSV in the tournament's edit page. Review the preview (sections, rated flags, no-shows skipped, any blank USCF IDs) and confirm.
 - A "Family name first" option is available to reverse the display of First and Last names for individual registrants.
 4. **Enter rounds**
-- On the event's page, use the pairing aid under the Rounds tab to pair each round either by hand or with the "Suggest pairings" button, then enter results (or byes or a withdrawal) and save. Standings are updated immediately for anyone viewing the page. The "Suggest pairings" button pairs all the players and populates the pairing aid for you to review, modify, and save. Pairings are determined by closeness in rating, a player is never paired against the same player twice, and family members (players sharing a family key or a last name) are not paired against each other when an alternative exists.
+- On the event's page, use the pairing aid under the Rounds tab to pair each round either by hand or with the "Suggest pairings" button, then enter results (or byes or a withdrawal) and save. Standings are updated immediately for anyone viewing the page. The "Suggest pairings" button pairs all the players and populates the pairing aid for you to review, modify, and save. Pairings are determined by closeness in rating; a player is never paired against the same opponent twice, and family members (players sharing a family key or a last name) are not paired against each other when an alternative exists.
 5. **Check standings**
 - The event page shows live standings with tiebreaks under the Standings tab.
 6. **Export**
@@ -221,9 +223,19 @@ Unlock the tournament again if you ever need to correct a result. Sharing result
 
 ## Troubleshooting
 
+**How do I update Tournament Manager?**
+
+Tournament Manager uses [Plugin Update Checker](https://github.com/YahnisElsts/plugin-update-checker). A new version shows up under Dashboard -> Updates and on the Plugins page with the usual "update now" link, and your tournaments, sections, players, and results are untouched by an update.
+
+Nothing extra to install. The update check ships inside the plugin.
+
+Checks run a couple of times a day, so a release can take a few hours to appear. Clicking "Check again" on the Updates screen asks immediately. Only published releases are offered, so day-to-day work in the repository never prompts you to update, and you'll never be asked to update in the middle of a tournament because someone pushed code that morning.
+
+If you'd rather a site never check, add `define( 'WPMTM_DISABLE_UPDATE_CHECK', true );` to its `wp-config.php`. This is worth doing on a development or staging copy, which would otherwise offer to overwrite your working files with a release.
+
 **What's the difference between an event and a tournament?**
 
-An "event" and a "tournament" are two different things, managed by two different plugins. The *event* is the public listing that players see and register for using The Events Calendar (TEC), with registration handled by Event Tickets (ET), further enhanced by Event Tickets Extra Custom Fields (ETECF), and Event Tickets Registration (ETR).
+An "event" and a "tournament" are two different things, managed by two different plugins. The *event* is the public listing that players see and register for using The Events Calendar (TEC), with registration handled by Event Tickets (ET), further enhanced by Event Tickets Extra Custom Fields (ETECF), and Event Tickets Registrations (ETR).
 
 The *tournament* is created by Tournament Manager (TM) and has all the pairing, round entry, standings, and CSV / USCF export data. A *tournament* links to a TEC calendar event: TEC/ET/ETECF/ETR does all the event page and registration, and TM handles everything for actually running the tournament once registration closes.
 
@@ -237,7 +249,7 @@ Note that whether the front-end registration path is open at all on the day is d
 
 The "+ Add player" button in a section's roster editor is a different thing: it's for data corrections, not registrations. A player added that way has no Event Tickets registration behind them, so the automatic USCF membership check at registration never runs for them. They still get checked by the USCF export and by `wp wpmtm validate players`.
 
-**When should I delete a player instead of marking them Withdrawn**
+**When should I delete a player instead of marking them Withdrawn?**
 
 Withdrawn is for an ordinary no-show or if a player voluntarily leaves during a tournament.
 
@@ -250,7 +262,7 @@ Withdrawn is for an ordinary no-show or if a player voluntarily leaves during a 
 - A mismerged or badly mistyped record where starting over is simpler than editing five fields.
 - A mistaken manual "+ Add player" row.
 
-**What happens if a player being deleting has already played rounds?**
+**What happens if a player being deleted has already played rounds?**
 
 Danger! Deleting a player deletes their opponents' recorded games for those rounds, too, not just the deleted player's own data. A board result is one shared row, and removing either side of it removes the whole row.
 
@@ -264,17 +276,17 @@ Tournament Manager shows a confirmation warning before deleting an already-saved
 
 Tournament Manager can handle the rare situation of a player who needs to be disqualified even though there's no specific disqualification feature.
 
-First, **determine what happened**. Is the disqualified player simply out of the tournament going forward (dress code violation, unsportsmanlike behavior, being late to games, etc.) and therefore excluded from future rounds, or is there proof that cheating occured during an earlier round? These two scenarios need to be handled differently.
+First, **determine what happened**. Is the disqualified player simply out of the tournament going forward (dress code violation, unsportsmanlike behavior, being late to games, etc.) and therefore excluded from future rounds, or is there proof that cheating occurred during an earlier round? These two scenarios need to be handled differently.
 
 1. In either DQ scenario, open Round entry for the round when the DQ takes effect, set that player to **"Withdraw (out from this round on)"**, and save. That's it for most scenarios. Tournament Manager auto-fills `U` (non-participant) for every later round in both standings and USCF export.
-2. **Note the disqualification somewhere** (there's no "DQ" badge on standings / wall charts). This runs independent of Tournament Manager entirely.
+2. **Record the reason** for the DQ as an admin note (if an `admin_note` field has been created using Event Tickets Extra Custom Fields, or ETECF). Click "Edit registration details" on the disqualified player's player card to view, add, or edit the admin note. Any TD can view admin notes, and to add or edit them a WordPress administrator is required. This is managed by Event Tickets Extra Custom Fields (ETECF) outside of Tournament Manager
 
-**Don't delete a board** to remove the the disqualified player (this also delete's the disqualified player's opponent's results, too), and **don't backdate** with "withdraw after round" earlier than rounds they actually played (this breaks that round's dropdown display, though the underlying data stays intact).
+**Don't delete a board** to remove the disqualified player (this also deletes the disqualified player's opponent's results), and **don't backdate** with "withdraw after round" earlier than rounds they actually played (this breaks that round's dropdown display, though the underlying data stays intact).
 
 If there's proof that a player cheated during a past game:
 
 1. **Report the cheating separately and in writing to the US Chess office** as an Ethics Committee complaint. This runs independent of Tournament Manager entirely.
-2. Go to the event's Rounds tab, use the round selector to open the affected round (keeping in mind that "Lock this tournament" blocks edits, so you may need to unlock the tournament first).
+2. Go to the event's Rounds tab, use the round selector to open the affected round (keeping in mind that "Lock the tournament" blocks edits, so you may need to unlock the tournament first).
 3. Find the board, and change the Result dropdown to change the result to the color that should have won: pick **`W`** if the disqualified player's opponent was White, or pick **`B`** if the disqualified player's opponent was Black. This automatically gives the disqualified player a reciprocal loss.
 4. **Don't pick `FW` / `FB`** (forfeit). Per the USCF rulebook, a game where both sides actually made at least one move stays rated even when the loss is for a rules violation. Forfeit codes mark the game unrated, and `W` / `B` keeps it a normal, rated result.
 5. Save, and standings recompute immediately off the new result via the existing scoring engine.
@@ -282,11 +294,11 @@ If there's proof that a player cheated during a past game:
 
 **Editing registration data before or after a tournament already has a roster**
 
-Registration data is viewable / editable by the person who paid during registration (perfect for parents), and this is managed by Event Tickets Extra Custom Fields (ETECF) outside of Tournament Manager. Note that registration data edited *after* event registrations via ETECF have been imported via CSV or the "Create tournament" button is clicked *do* get saved but those changes are reflected in ETR and not in Tournament Manager post-import.
+Registration data is viewable / editable by the person who paid during registration (perfect for parents), and this is managed by Event Tickets Extra Custom Fields (ETECF) outside of Tournament Manager. Note that once registrations have been imported into Tournament Manager (via CSV or the "Create tournament" button), any later edits a registrant makes to their registration data through ETECF *are* saved, but they are reflected in ETR only and not in Tournament Manager's already-imported roster.
 
 **The "Create tournament" button is missing**
 
-The "Create tournament" button on ETR's Registrations tab needs ETR 5.2.3 or later. Older ETR versions will still work with Tournament Manager but only through the manual CSV upload.
+The "Create tournament" button on ETR's Registrations tab needs ETR 5.2.4 or later. Older ETR versions will still work with Tournament Manager but only through the manual CSV upload.
 
 **The USCF export worked, but importing to USCF doesn't**
 
@@ -317,8 +329,7 @@ The first `m` in `wpmtm` is a nod to the McMinnville Chess Club for which Tourna
 
 ## Uninstall
 
-Uninstalling removes `wpmtm_options`, `wpmtm_db_version`, and the `wpmtm_manage_tournaments` permission from every role. Drops the five
-`wpmtm_*` tables only if "On uninstall" in Settings is set to delete tournament data. This is off by default, so a club's tournament history survives an accidental deactivate and delete.
+Uninstalling always removes the `wpmtm_options`, `wpmtm_db_version`, and `wpmtm_role_decision` options; every per-tournament `wpmtm_td_check_{id}` and `wpmtm_exported_{id}` option; the `_wpmtm_rating_source` and `_wpmtm_rating_checked` attendee postmeta TM wrote on ETECF's attendee posts; TM's cached USCF, registration-warning, and notice transients; the `wpmtm_manage_tournaments` permission from every role; and the optional `wpmtm_tournament_manager` role if it was ever created. It drops the five `wpmtm_*` tables only if "On uninstall" in Settings is set to delete tournament data. That setting is off by default, so a club's tournament history survives an accidental deactivate and delete.
 
 ## Acknowledgements
 
