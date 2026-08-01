@@ -105,29 +105,21 @@
 ( function () {
 	'use strict';
 
-	function bindRemove( row, removedInput, confirmMessage ) {
-		var btn = row.querySelector( '[data-remove-row]' );
-		if ( ! btn ) {
+	function removeRow( row, removedInput, confirmMessage ) {
+		var existingId = row.getAttribute( 'data-existing-id' );
+		// Only an ALREADY-SAVED row has anything to lose - a row just added
+		// and never saved yet is removed instantly, same as before, no prompt.
+		if ( existingId && confirmMessage && ! window.confirm( confirmMessage ) ) {
 			return;
 		}
-		btn.addEventListener( 'click', function ( e ) {
-			e.preventDefault();
-			var existingId = row.getAttribute( 'data-existing-id' );
-			// Only an ALREADY-SAVED row has anything to lose - a row just
-			// added and never saved yet is removed instantly, same as
-			// before, no prompt.
-			if ( existingId && confirmMessage && ! window.confirm( confirmMessage ) ) {
-				return;
-			}
-			if ( existingId && removedInput ) {
-				var ids = removedInput.value ? removedInput.value.split( ',' ).filter( Boolean ) : [];
-				ids.push( existingId );
-				removedInput.value = ids.join( ',' );
-			}
-			if ( row.parentNode ) {
-				row.parentNode.removeChild( row );
-			}
-		} );
+		if ( existingId && removedInput ) {
+			var ids = removedInput.value ? removedInput.value.split( ',' ).filter( Boolean ) : [];
+			ids.push( existingId );
+			removedInput.value = ids.join( ',' );
+		}
+		if ( row.parentNode ) {
+			row.parentNode.removeChild( row );
+		}
 	}
 
 	function initRepeater( table ) {
@@ -141,8 +133,21 @@
 		var removedInput   = removedInputId ? document.getElementById( removedInputId ) : null;
 		var confirmMessage = table.getAttribute( 'data-wpmtm-remove-confirm' );
 
-		Array.prototype.slice.call( body.querySelectorAll( 'tr' ) ).forEach( function ( row ) {
-			bindRemove( row, removedInput, confirmMessage );
+		// One delegated listener on the tbody instead of a click handler bound
+		// per row (and per added clone): catches [data-remove-row] clicks on
+		// existing rows and on rows added later alike, so the add handler
+		// below binds nothing to each clone. Matches the e.target.closest
+		// delegation pattern the other handlers in this file use.
+		body.addEventListener( 'click', function ( e ) {
+			var btn = e.target.closest ? e.target.closest( '[data-remove-row]' ) : null;
+			if ( ! btn || ! body.contains( btn ) ) {
+				return;
+			}
+			e.preventDefault();
+			var row = btn.closest ? btn.closest( 'tr' ) : null;
+			if ( row ) {
+				removeRow( row, removedInput, confirmMessage );
+			}
 		} );
 
 		var addBtn = document.querySelector( '[data-add-row-for="' + table.id + '"]' );
@@ -165,7 +170,6 @@
 				}
 			} );
 
-			bindRemove( clone, removedInput, confirmMessage );
 			body.appendChild( clone );
 
 			var firstField = clone.querySelector( 'input[type="text"]' );

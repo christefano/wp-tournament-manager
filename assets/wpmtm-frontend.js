@@ -70,6 +70,14 @@
 		}
 		btn.addEventListener( 'click', function ( e ) {
 			e.preventDefault();
+			// Rows holding an already-saved board carry a server-rendered
+			// confirmation message (see render_board_row()): removing such a
+			// row deletes the WHOLE board on save, including the opponent's
+			// recorded result, so it must never happen on a stray click.
+			var confirmMsg = btn.getAttribute( 'data-wpmtm-remove-confirm' );
+			if ( confirmMsg && ! window.confirm( confirmMsg ) ) {
+				return;
+			}
 			if ( row.parentNode ) {
 				row.parentNode.removeChild( row );
 			}

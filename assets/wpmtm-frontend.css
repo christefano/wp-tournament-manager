@@ -127,6 +127,9 @@ a.wpmtm-round-tab:focus-visible {
 	margin-bottom: 12px;
 }
 
+/* Keep in sync with .wpmtm-wrap .wpmtm-col-num in wpmtm-admin.css (same
+   values; that copy is .wpmtm-wrap-scoped for the admin roster/sections
+   editors, this global one styles the front-end round-entry board row). */
 .wpmtm-col-num {
 	width: 3em;
 	color: #787c82;
@@ -695,5 +698,49 @@ body[data-etr-active-tab="round-entry"] .tribe-events-meta-group-organizer {
 @media print {
 	.wpmtm-round-selector-band {
 		display: none !important;
+	}
+}
+
+/* Profile pictures on the Pairings tab (and its printed pairing sheet). A new
+   rule block rather than an edit to the ones above, per the append-only
+   instruction for this file.
+
+   The standings and wall chart give the avatar its own leading column; the
+   pairings board list puts it inline beside the name instead, because White
+   and Black are already two separate player columns and a photo column per
+   side would turn a four-column board list into six. */
+.wpmtm-pairing-player {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+}
+
+.wpmtm-pairing-player .wpmtm-avatar {
+	flex: 0 0 auto;
+}
+
+.wpmtm-pairing-player-name {
+	min-width: 0;
+}
+
+@media print {
+	/* The "no photo" silhouette is a data-URI BACKGROUND image
+	   (.wpmtm-avatar--placeholder above), and browsers drop background colors
+	   and images from printed output by default - without this the printed
+	   sheet shows a blank 40x40 gap for every player who has no photo on
+	   file, which reads as a rendering bug rather than as "no photo". Real
+	   photos are <img> elements and print regardless; this is only needed for
+	   the placeholder. -webkit- prefix included for Chrome and Safari, which
+	   still want it. */
+	.wpmtm-avatar--placeholder {
+		-webkit-print-color-adjust: exact;
+		print-color-adjust: exact;
+	}
+
+	/* Keep a board's photo and name on one line when the sheet is printed. */
+	.wpmtm-pairing-player {
+		display: flex;
+		align-items: center;
+		gap: 8px;
 	}
 }

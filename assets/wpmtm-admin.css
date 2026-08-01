@@ -36,6 +36,11 @@
 	width: 5em;
 }
 
+/* Keep in sync with the global .wpmtm-col-num in wpmtm-frontend.css: same
+   values, but that copy cannot be scoped under .wpmtm-wrap because the
+   front-end round-entry board row (WPMTM_Frontend_TD board table) is not
+   inside a .wpmtm-wrap. Two live copies in two context-separated stylesheets;
+   not worth a third shared file for three lines. */
 .wpmtm-wrap .wpmtm-col-num {
 	width: 3em;
 	color: #787c82;
@@ -164,35 +169,6 @@
 .wpmtm-wrap .wpmtm-player-note {
 	white-space: pre-wrap;
 	max-width: 260px;
-}
-
-/* .wpmtm-wizard-dots / .wpmtm-wizard-dot below predate the 2026-07-16
- * stepper redesign and were already unused by any PHP output before
- * 2026-07-22 - left alone as pre-existing, unrelated dead CSS rather than
- * folded into this cleanup. Every OTHER .wpmtm-wizard-* rule that used to
- * sit here (.wpmtm-wizard-card/-heading/-progress/-line/-actions/-exit,
- * .wpmtm-wizard-offer p, .wpmtm-wizard-offer-dismiss) styled render_card()/
- * render_offer() in includes/class-wpmtm-wizard.php, both removed
- * 2026-07-22 (owner request: no setup guide notice on the Tournaments list
- * page, matching Settings) - removed here too, now genuinely unreachable. */
-.wpmtm-wizard-dots {
-	margin: 0 0 12px;
-	line-height: 1;
-}
-
-.wpmtm-wizard-dot {
-	display: inline-block;
-	width: 10px;
-	height: 10px;
-	margin-right: 6px;
-	border-radius: 50%;
-	border: 1px solid #8c8f94;
-	background: transparent;
-}
-
-.wpmtm-wizard-dot.is-active {
-	background: #2271b1;
-	border-color: #2271b1;
 }
 
 /* Setup guide stepper panel (includes/class-wpmtm-wizard.php,
