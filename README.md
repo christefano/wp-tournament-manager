@@ -227,12 +227,6 @@ Unlock the tournament again if you ever need to correct a result. Sharing result
 
 Tournament Manager uses [Plugin Update Checker](https://github.com/YahnisElsts/plugin-update-checker). A new version shows up under Dashboard -> Updates and on the Plugins page with the usual "update now" link, and your tournaments, sections, players, and results are untouched by an update.
 
-Nothing extra to install. The update check ships inside the plugin.
-
-Checks run a couple of times a day, so a release can take a few hours to appear. Clicking "Check again" on the Updates screen asks immediately. Only published releases are offered, so day-to-day work in the repository never prompts you to update, and you'll never be asked to update in the middle of a tournament because someone pushed code that morning.
-
-If you'd rather a site never check, add `define( 'WPMTM_DISABLE_UPDATE_CHECK', true );` to its `wp-config.php`. This is worth doing on a development or staging copy, which would otherwise offer to overwrite your working files with a release.
-
 **What's the difference between an event and a tournament?**
 
 An "event" and a "tournament" are two different things, managed by two different plugins. The *event* is the public listing that players see and register for using The Events Calendar (TEC), with registration handled by Event Tickets (ET), further enhanced by Event Tickets Extra Custom Fields (ETECF), and Event Tickets Registrations (ETR).
