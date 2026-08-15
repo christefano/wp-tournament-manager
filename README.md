@@ -8,6 +8,14 @@ Tournament Manager was built for the [McMinnville Chess Club](https://macchess.o
 
 If you find this plugin useful, consider [making a donation](https://macchess.org/donate) to the McMinnville Chess Club!
 
+## Maintenance announcement
+
+As of v1.5, Tournament Manager is considered feature-complete, and new feature development has been paused.
+
+The focus now is on stability, bug fixes, security patches, and performance improvements.
+
+New feature development will pick up again with Tournament Manager v2.0. If you have a feature request for v2.0, please [open an issue](https://github.com/christefano/wp-tournament-manager/issues). Co-maintainers welcome!
+
 ## Requirements
 
 - WordPress 5.0 or later
@@ -27,7 +35,7 @@ Tournament Manager pulls in a club's existing online registration from ET (enhan
 
 **Registration import**
 
-- Bring a roster in from ETR's "Pairing export" CSV, a roster uploaded manually, or (with ETR 5.2.4+) pulled straight over with one click with the "Create tournament" button on the event's Registrations tab.
+- Bring a roster in from ETR's "Pairing export" CSV, a roster uploaded manually, or (with ETR 5.2.4+) pulled straight over with one click using the button on the event's Registrations tab - named "Create tournament" from ETR 5.2.7 on, "Import to Tournament Manager" on ETR 5.2.4-5.2.6.
 - Players marked "No-show" on their player card in ETR in advance of the import are skipped and aren't included in the tournament roster.
 - A USCF ID can be entered during event registration and is imported by Event Tickets Registrations (ETR).
 - Tournament sections can be marked as rated or unrated, and sections can be split into 4-player round robin quads during import.
@@ -97,15 +105,15 @@ Tournament Manager pulls in a club's existing online registration from ET (enhan
 
 **WP-CLI**
 
-- `wp wpmtm validate players|tds|affiliate|all`, each accepting `--tournament=<id>` (or `--event=<id>` for players/affiliate) and `--format=json`, run the same USCF checks the admin screens use from the command line. This is handy for a cron job, a pre-submission sanity check, or if a roster is particularly large. Any check that fails exits with a non-zero exit code. If the USCF is unreachable TM will report that, but this doesn't by itself fail the command.
+- `wp wpmtm validate players|tds|affiliate|all`, each accepting `--tournament=<id>` (or `--event=<id>` for players/affiliate/all) and `--format=json`, run the same USCF checks the admin screens use from the command line. This is handy for a cron job, a pre-submission sanity check, or if a roster is particularly large. Any check that fails exits with a non-zero exit code. If the USCF is unreachable TM will report that, but this doesn't by itself fail the command.
 
 **Performance**
 
 - Assuming Tournament Manager is running on a publicly-accessible website, everything the general public sees (a saved round, a withdrawal, a settings change) flushes that event page across whichever page caching plugin is active (W3 Total Cache, WP Super Cache, WP Rocket, and LiteSpeed Cache).
 - TD-only pages are never cached. The public always sees a cached page, so long as a supported caching plugin is active.
-- Using ETR's "Demo mode", Tournament Manager has been performance tested up to 200 players with 5 rounds. In a test with 100 players and 5 rounds, database queries were under 10ms (40ms for the USCF export), memory around 2MB, and page size was just 81KB. Demo mode draws from a pool of 50 real, currently-active US Chess members managed by Tournament Manager (see "Test player pool" below), so those test registrants pass the same USCF checks a real roster does.
+- Using ETR's "Demo mode", Tournament Manager has been performance tested up to 200 players with 5 rounds. In a test with 100 players and 5 rounds, database queries were under 10ms (40ms for the USCF export) and memory was around 2MB. (An earlier, pre-1.4 page-size figure for that same test predates the player card feature and is no longer a fair comparison to current page weight - see the Standings/Wall chart byte figures in the 1.5.0 CHANGELOG entry for a current, dated measurement instead.) Demo mode draws from a pool of 50 real, currently-active US Chess members managed by Tournament Manager (see "Test player pool" below), so those test registrants pass the same USCF checks a real roster does.
 - Note that putting hundreds of players in the same section will have a performance cost for TDs. Tournaments don't really ever have mega sections, though, so this would never happen in reality.
-- The All Tournaments page is the only truly heavy page because it checks the status of every tournament (3 database queries per unlocked tournament) and suggests next steps for the TD. For this reason, it's important to **lock tournaments when they're over** so the All Tournaments page doesn't unnecessarily check their status.
+- The All Tournaments page is the only truly heavy page because it checks the status of every tournament (4 database queries per unlocked tournament) and suggests next steps for the TD. For this reason, it's important to **lock tournaments when they're over** so the All Tournaments page doesn't unnecessarily check their status.
 
 **USCF API calls and caching**
 
@@ -128,7 +136,7 @@ The USCF MUIR API v1 behind all of the membership and TD checks is officially un
 **Permissions**
 
 - All tournament admin pages require the `wpmtm_manage_tournaments` permission, and administrators are granted it automatically on activation.
-- The `wpmtm_manage_tournaments` permission enables simultaneous management of multiple tournaments by multiple TDs without ever showing a TD the tournaments belonging to another TD.
+- The `wpmtm_manage_tournaments` permission enables simultaneous management of multiple tournaments by multiple TDs without ever showing a TD the tournaments belonging to another TD - except a tournament created before ownership tracking was added (1.4), or created without an owner, which any TD holding the permission can still manage. This grandfathering exists because there is no reliable owner to check such a tournament against.
 - The Settings page requires the `manage_options` permission.
 
 ## Screenshots
@@ -147,7 +155,7 @@ A quick tour of a tournament with test data from setup to USCF upload. Click any
 
 [![Pairing aid](screenshots/pairing-aid.png)](screenshots/pairing-aid.png) _Pairing aid - score groups with the color due and the opponents already played, so a TD can pair each round by hand from the top down (or let the "Suggest pairings" button do it)._
 
-[![Round entry](screenshots/round-entry.png)](screenshots/round-entry.png) _Round entry - a round selector shows every round at a glance with the one you're viewing clearly marked, above a collapsible Pairing aid and Entry form (set each board's result, assign a bye, or withdraw a player) that open to whichever one you need next._
+[![Round entry](screenshots/round-entry.png)](screenshots/round-entry.png) _Round entry - a round selector shows every round at a glance, with a check mark for each one already fully entered. Pair rounds and Enter results are separate modes: Pair rounds opens the pairing aid and a "Save pairings" button; Enter results opens the entry form to set each board's result, assign a bye, or withdraw a player._
 
 [![Standings](screenshots/standings.png)](screenshots/standings.png) _Standings - Standings with all four USCF 34E tiebreaks in order (Modified Median, Solkoff, Cumulative, Cumulative of Opposition), shown live on the event page._
 
@@ -173,7 +181,9 @@ First, an event for the tournament needs to exist (using The Events Calendar, or
 - Click "Create tournament" right on the event's Registrations tab, or upload ETR's "Pairing export" CSV in the tournament's edit page. Review the preview (sections, rated flags, no-shows skipped, any blank USCF IDs) and confirm.
 - A "Family name first" option is available to reverse the display of First and Last names for individual registrants.
 4. **Enter rounds**
-- On the event's page, use the pairing aid under the Rounds tab to pair each round either by hand or with the "Suggest pairings" button, then enter results (or byes or a withdrawal) and save. Standings are updated immediately for anyone viewing the page. The "Suggest pairings" button pairs all the players and populates the pairing aid for you to review, modify, and save. Pairings are determined by closeness in rating; a player is never paired against the same opponent twice, and family members (players sharing a family key or a last name) are not paired against each other when an alternative exists.
+- The Rounds tab on the event's page has two modes, switched with a control at the top: **Pair rounds** and **Enter results**. Pairing a round and recording what happened in it are two different jobs done at two different times, so they get two separate forms.
+- In Pair rounds, use the pairing aid to pair the round by hand or with the "Suggest pairings" button, then click "Save pairings" - this records who plays whom and leaves every result blank to fill in later. The "Suggest pairings" button pairs all the players and populates the pairing aid for you to review, modify, and save. Pairings are determined by closeness in rating; a player is never paired against the same opponent twice, and family members (players sharing a family key or a last name) are not paired against each other when an alternative exists. You can re-suggest or re-save pairings for a round any time before it is locked, without losing results already entered for pairings that have not changed.
+- In Enter results, pick a round from the round selector (a check mark shows which rounds are already fully entered) and record each board's result, or a bye or a withdrawal, then save. Standings update immediately for anyone viewing the page.
 5. **Check standings**
 - The event page shows live standings with tiebreaks under the Standings tab.
 6. **Export**
@@ -207,7 +217,7 @@ On the tournament edit page, set each section's number of rounds in the sections
 
 ### Rounds step
 
-On the event page's Rounds tab, pair each round with the pairing aid (either manually or with the "Suggest pairings" button), then enter results, byes, or a withdrawal and save. Standings update immediately for anyone viewing the page. Standings rank by score until every round is entered, after which tiebreaks settle final rankings.
+On the event page's Rounds tab, switch to Pair rounds to pair each round with the pairing aid (either manually or with the "Suggest pairings" button) and save the pairings, then switch to Enter results to record each board's result, a bye, or a withdrawal and save. Standings update immediately for anyone viewing the page. Standings rank by score until every round is entered, after which tiebreaks settle final rankings.
 
 ### Export step
 
@@ -227,6 +237,12 @@ Unlock the tournament again if you ever need to correct a result. Sharing result
 
 Tournament Manager uses [Plugin Update Checker](https://github.com/YahnisElsts/plugin-update-checker). A new version shows up under Dashboard -> Updates and on the Plugins page with the usual "update now" link, and your tournaments, sections, players, and results are untouched by an update.
 
+Nothing extra to install. The update check ships inside the plugin.
+
+Checks run a couple of times a day, so a release can take a few hours to appear. Clicking "Check again" on the Updates screen asks immediately. Only published releases are offered, so day-to-day work in the repository never prompts you to update, and you'll never be asked to update in the middle of a tournament because someone pushed code that morning.
+
+If you'd rather a site never check, add `define( 'WPMTM_DISABLE_UPDATE_CHECK', true );` to its `wp-config.php`. This is worth doing on a development or staging copy, which would otherwise offer to overwrite your working files with a release.
+
 **What's the difference between an event and a tournament?**
 
 An "event" and a "tournament" are two different things, managed by two different plugins. The *event* is the public listing that players see and register for using The Events Calendar (TEC), with registration handled by Event Tickets (ET), further enhanced by Event Tickets Extra Custom Fields (ETECF), and Event Tickets Registrations (ETR).
@@ -243,6 +259,26 @@ Note that whether the front-end registration path is open at all on the day is d
 
 The "+ Add player" button in a section's roster editor is a different thing: it's for data corrections, not registrations. A player added that way has no Event Tickets registration behind them, so the automatic USCF membership check at registration never runs for them. They still get checked by the USCF export and by `wp wpmtm validate players`.
 
+**How do I set up a quad, or a double quad?**
+
+A quad is a four-player round robin: everyone plays everyone else, and with four players that's three rounds. Set one up in the Sections step by adding a section and setting its Type to "Quad (4-player)". The Rounds field fills in automatically, since a quad is fixed at 3 rounds by definition, so you don't set the round count yourself, and a quad that isn't quite full yet still runs the same 3-round schedule.
+
+For a "double quad", set the Cycles field to "Double (play everyone twice, colors reversed)". Now everyone plays everyone else twice, once with White and once with Black, and the Rounds field doubles to 6. Each player finishes with three Whites and three Blacks, so nobody is stuck on one color for the whole event.
+
+The larger cousin is a plain Round Robin, which is the same idea for any number of players rather than exactly four. It offers the same Single / Double cycles choice: a single cycle is the number of players minus one for an even field, or equal to the player count for an odd field (everyone sits out once via a bye), and a double cycle doubles that.
+
+When you pair each round, the pairing aid follows the standard circle schedule by pairing number and shows each player's "still to play" list and color due. In a double quad that list keeps a player's second game in view until it has been played, and the color due flips to the opposite color for the rematch, so the aid walks you through the second cycle the same way it does the first. As always, review every board before you save.
+
+**Can I pair all the rounds up front, or do I have to wait for each round's results?**
+
+It depends on the section's Type, and the two cases are genuinely different.
+
+Round Robin and Quad sections can be paired as far ahead as you like. Their whole schedule is worked out from pairing numbers before a single game is played: round 3 of a quad is the same three boards whether or not rounds 1 and 2 have been entered. So you can sit down before the event, walk the round selector forward, and pair every round in one go if that suits how you run the day.
+
+Swiss sections cannot. A Swiss round is paired from the standings, so round 3's pairings depend on what happened in rounds 1 and 2. Tournament Manager refuses to pair (or suggest pairings for) a Swiss round until every earlier round has a result on every board, rather than building a pairing off standings that do not exist yet. For Swiss, work one round at a time: pair it, play it, enter the results, then pair the next one.
+
+The short version: if the schedule is fixed by the format (Round Robin, Quad), pair ahead freely. If the schedule is decided by results (Swiss), stay one round at a time.
+
 **When should I delete a player instead of marking them Withdrawn?**
 
 Withdrawn is for an ordinary no-show or if a player voluntarily leaves during a tournament.
@@ -252,7 +288,7 @@ Withdrawn is for an ordinary no-show or if a player voluntarily leaves during a 
 - A duplicate roster row (a re-import, or a manually re-typed row) created a second entry for the same person.
 - A player imported into the wrong section (e.g. Open instead of Reserve or vice versa).
 - A no-show discovered *after* import. ETR's "No-show" flag only skips a player if it's set *before* you import; if you find out after the roster's already in Tournament Manager, deleting is the only way to pull them back out.
-- A registration cancelled or refunded after import. Tournament Manager doesn't watch for that, so the roster needs a manual correction.
+- A registration canceled or refunded after import. Tournament Manager doesn't watch for that, so the roster needs a manual correction.
 - A mismerged or badly mistyped record where starting over is simpler than editing five fields.
 - A mistaken manual "+ Add player" row.
 
@@ -273,7 +309,7 @@ Tournament Manager can handle the rare situation of a player who needs to be dis
 First, **determine what happened**. Is the disqualified player simply out of the tournament going forward (dress code violation, unsportsmanlike behavior, being late to games, etc.) and therefore excluded from future rounds, or is there proof that cheating occurred during an earlier round? These two scenarios need to be handled differently.
 
 1. In either DQ scenario, open Round entry for the round when the DQ takes effect, set that player to **"Withdraw (out from this round on)"**, and save. That's it for most scenarios. Tournament Manager auto-fills `U` (non-participant) for every later round in both standings and USCF export.
-2. **Record the reason** for the DQ as an admin note (if an `admin_note` field has been created using Event Tickets Extra Custom Fields, or ETECF). Click "Edit registration details" on the disqualified player's player card to view, add, or edit the admin note. Any TD can view admin notes, and to add or edit them a WordPress administrator is required. This is managed by Event Tickets Extra Custom Fields (ETECF) outside of Tournament Manager
+2. **Record the reason** for the DQ as an admin note (if an `admin_note` field has been created using Event Tickets Extra Custom Fields, or ETECF). Click "Edit registration details" on the disqualified player's player card to view, add, or edit the admin note. Any TD can view admin notes, and to add or edit them a WordPress administrator is required. This is managed by Event Tickets Extra Custom Fields (ETECF) outside of Tournament Manager.
 
 **Don't delete a board** to remove the disqualified player (this also deletes the disqualified player's opponent's results), and **don't backdate** with "withdraw after round" earlier than rounds they actually played (this breaks that round's dropdown display, though the underlying data stays intact).
 
@@ -292,7 +328,7 @@ Registration data is viewable / editable by the person who paid during registrat
 
 **The "Create tournament" button is missing**
 
-The "Create tournament" button on ETR's Registrations tab needs ETR 5.2.4 or later. Older ETR versions will still work with Tournament Manager but only through the manual CSV upload.
+The one-click import button on ETR's Registrations tab needs ETR 5.2.4 or later; older ETR versions still work with Tournament Manager but only through the manual CSV upload. Its label changed in ETR 5.2.7 from "Import to Tournament Manager" to "Create tournament" - if the button is present but reads the older name, the import itself still works, only the wording is behind.
 
 **The USCF export worked, but importing to USCF doesn't**
 
@@ -317,7 +353,7 @@ On the upside, you can enable a third-party plugin like ASE to hide notices if y
 ## Data
 
 Tournament Manager creates five tables (prefixed with your WordPress table prefix): `wpmtm_tournaments`, `wpmtm_sections`, `wpmtm_players`,
-`wpmtm_games`, and `wpmtm_byes`. It also saves the `wpmtm_options` option (affiliate ID, TD IDs, defaults, time control presets, and delete-on-uninstall flag) and the `wpmtm_db_version` option used to run schema upgrades.
+`wpmtm_games`, and `wpmtm_byes`. It also saves the `wpmtm_options` option (affiliate ID, TD IDs, defaults, time control presets, and delete-on-uninstall flag), the `wpmtm_db_version` option used to run schema upgrades, the `wpmtm_role_decision` option, and two per-tournament options (`wpmtm_td_check_{id}`, `wpmtm_exported_{id}`) - the full inventory the Uninstall section below sweeps.
 
 The first `m` in `wpmtm` is a nod to the McMinnville Chess Club for which Tournament Manager was originally created.
 
