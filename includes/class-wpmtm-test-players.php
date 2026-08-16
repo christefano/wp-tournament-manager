@@ -9,7 +9,7 @@ if ( ! defined( 'ABSPATH' ) ) {
  * Exists so callers, including wp-etr's "Add test registrants" tool, have a
  * stable public entry point rather than each one `include`-ing a file path
  * that could move. wp-etr checks `class_exists( 'WPMTM_Test_Players' )` and
- * falls back to its own behaviour when Tournament Manager is not active, so
+ * falls back to its own behavior when Tournament Manager is not active, so
  * this is the seam between the two plugins.
  *
  * See the data file's own docblock for where the players came from, how they

@@ -57,7 +57,7 @@ class WPMTM_Admin_Sections {
 					<li><?php esc_html_e( 'Time control uses USCF notation, e.g. G/30;d0 - start typing to see suggestions from Settings.', 'wp-tournament-manager' ); ?></li>
 					<li><?php esc_html_e( 'Rounds is the total number of rounds planned for the section.', 'wp-tournament-manager' ); ?></li>
 					<li><?php esc_html_e( 'Type is Swiss by default. Round Robin pairs every player against every other player once. The pairing aid and USCF submission both adapt automatically (see the note under Type when it is selected).', 'wp-tournament-manager' ); ?></li>
-					<li><?php esc_html_e( 'Quad is a 4-player round robin, 3 rounds. It behaves exactly like Round Robin everywhere. The import screen can also split a large section into quads automatically.', 'wp-tournament-manager' ); ?></li>
+					<li><?php esc_html_e( 'Quad is a 4-player round robin, 3 rounds. Use exactly 4 players per Quad section. For a larger field, make several Quad sections of 4, or let the import screen split it into quads automatically.', 'wp-tournament-manager' ); ?></li>
 					<li><?php esc_html_e( 'Advanced holds optional Grand Prix and scholastic settings.', 'wp-tournament-manager' ); ?></li>
 					<li><?php esc_html_e( 'Rated controls whether the section goes into the USCF export.', 'wp-tournament-manager' ); ?></li>
 					<li><?php esc_html_e( '"Manage (n)" opens that section\'s player list, where pairing numbers are assigned automatically by rating.', 'wp-tournament-manager' ); ?></li>
@@ -88,7 +88,7 @@ class WPMTM_Admin_Sections {
 				<input type="hidden" name="tournament_id" value="<?php echo esc_attr( $tournament->id ); ?>">
 				<input type="hidden" id="wpmtm-removed-sections" name="removed_sections" value="">
 
-				<table class="wp-list-table widefat fixed striped wpmtm-repeater" id="wpmtm-sections-table" data-wpmtm-repeater data-removed-input="wpmtm-removed-sections">
+				<table class="wp-list-table widefat fixed striped wpmtm-repeater" id="wpmtm-sections-table" data-wpmtm-repeater data-removed-input="wpmtm-removed-sections" data-wpmtm-remove-confirm="<?php echo esc_attr__( 'Remove this section? Removing a saved section permanently deletes its players, pairings, results, and byes on save. This cannot be undone.', 'wp-tournament-manager' ); ?>">
 					<thead>
 						<tr>
 							<th class="wpmtm-col-num"><?php esc_html_e( '#', 'wp-tournament-manager' ); ?></th>
@@ -129,6 +129,7 @@ class WPMTM_Admin_Sections {
 		$timectl     = $is_template ? '' : $section->timectl;
 		$tot_rnds    = $is_template ? '' : $section->tot_rnds;
 		$trn_type    = $is_template ? 'S' : $section->trn_type;
+		$cycles      = $is_template ? 1 : WPMTM_Pairing_Aid::normalize_cycles( isset( $section->cycles ) ? $section->cycles : 1 );
 		$sch_lvl     = $is_template ? '' : $section->sch_lvl;
 		$gr_prix     = ! $is_template && 'Y' === $section->gr_prix;
 		$gp_pts      = $is_template ? '' : $section->gp_pts;
@@ -153,14 +154,34 @@ class WPMTM_Admin_Sections {
 				? (int) $section->auto_rounds_hint
 				: null;
 			$current = (int) $tot_rnds;
-			if ( 0 === $current || ( null !== $prev_hint && $prev_hint === $current ) ) {
-				$tot_rnds         = WPMTM_Pairing_Aid::suggested_rounds( $trn_type, $player_count );
-				$auto_rounds_note = sprintf(
-					/* translators: %d: number of players currently in the section */
-					__( 'Set automatically for %d players. Change it to override.', 'wp-tournament-manager' ),
-					$player_count
-				);
+			if ( 'Q' === $trn_type || 0 === $current || ( null !== $prev_hint && $prev_hint === $current ) ) {
+				$tot_rnds         = WPMTM_Pairing_Aid::suggested_rounds( $trn_type, $player_count, $cycles );
+				$auto_rounds_note = $cycles > 1
+					? sprintf(
+						/* translators: %d: number of players currently in the section */
+						__( 'Set automatically for %d players, doubled for two cycles. Change it to override.', 'wp-tournament-manager' ),
+						$player_count
+					)
+					: sprintf(
+						/* translators: %d: number of players currently in the section */
+						__( 'Set automatically for %d players. Change it to override.', 'wp-tournament-manager' ),
+						$player_count
+					);
 			}
+		}
+
+		// Quad size warning: a quad is by definition exactly 4 players, but the
+		// Quad type hard-locks its round count to 3 regardless of roster size,
+		// so a section with any other count silently under- or over-schedules
+		// (an 8-player Quad runs only 3 rounds, not a real round robin). Warn
+		// once the section has a roster; an empty new section is not yet wrong.
+		$quad_size_warning = '';
+		if ( ! $is_template && 'Q' === $trn_type && $player_count > 0 && 4 !== (int) $player_count ) {
+			$quad_size_warning = sprintf(
+				/* translators: %d: number of players currently in the section */
+				__( 'A quad is exactly 4 players. This section has %d. Use Round Robin, or split the field into sections of 4.', 'wp-tournament-manager' ),
+				$player_count
+			);
 		}
 		?>
 		<tr<?php echo $is_template ? '' : ' data-existing-id="' . esc_attr( $key ) . '"'; ?>>
@@ -191,21 +212,29 @@ class WPMTM_Admin_Sections {
 				<select name="sections[<?php echo esc_attr( $key ); ?>][trn_type]" data-wpmtm-trn-type>
 					<option value="S" <?php selected( $trn_type, 'S' ); ?>><?php esc_html_e( 'Swiss', 'wp-tournament-manager' ); ?></option>
 					<option value="R" <?php selected( $trn_type, 'R' ); ?>><?php esc_html_e( 'Round Robin', 'wp-tournament-manager' ); ?></option>
-					<option value="Q" <?php selected( $trn_type, 'Q' ); ?>><?php esc_html_e( 'Quad (4-player round robin)', 'wp-tournament-manager' ); ?></option>
-					<option value="DRR" disabled><?php esc_html_e( 'Double Round Robin (not yet supported)', 'wp-tournament-manager' ); ?></option>
+					<option value="Q" <?php selected( $trn_type, 'Q' ); ?>><?php esc_html_e( 'Quad (4-player)', 'wp-tournament-manager' ); ?></option>
 					<option value="TS" disabled><?php esc_html_e( 'Team Swiss (not yet supported)', 'wp-tournament-manager' ); ?></option>
 					<option value="M" disabled><?php esc_html_e( 'Match (not yet supported)', 'wp-tournament-manager' ); ?></option>
 				</select>
-				<p class="description wpmtm-rr-hint" data-wpmtm-rr-hint <?php echo in_array( $trn_type, WPMTM_Pairing_Aid::RR_TYPES, true ) ? '' : 'hidden'; ?>>
-					<?php esc_html_e( 'Round robin: every player faces every other player once. Total rounds is players minus 1 for an even player count, or equal to the player count for an odd count (everyone sits out once). A quad is the same thing fixed at 4 players and 3 rounds.', 'wp-tournament-manager' ); ?>
+				<?php if ( '' !== $quad_size_warning ) : ?>
+					<p class="description wpmtm-quad-size-warning"><?php echo esc_html( $quad_size_warning ); ?></p>
+				<?php endif; ?>
+				<p class="wpmtm-rr-hint" data-wpmtm-rr-hint <?php echo in_array( $trn_type, WPMTM_Pairing_Aid::RR_TYPES, true ) ? '' : 'hidden'; ?>>
+					<label>
+						<?php esc_html_e( 'Cycles', 'wp-tournament-manager' ); ?>
+						<select name="sections[<?php echo esc_attr( $key ); ?>][cycles]" data-wpmtm-cycles>
+							<option value="1" <?php selected( $cycles, 1 ); ?>><?php esc_html_e( 'Single (play everyone once)', 'wp-tournament-manager' ); ?></option>
+							<option value="2" <?php selected( $cycles, 2 ); ?>><?php esc_html_e( 'Double (play everyone twice, colors reversed)', 'wp-tournament-manager' ); ?></option>
+						</select>
+					</label>
 				</p>
 			</td>
 			<td class="wpmtm-col-advanced">
 				<details>
 					<summary><?php esc_html_e( 'Advanced', 'wp-tournament-manager' ); ?></summary>
 					<div class="wpmtm-advanced-panel">
-						<p><label><input type="checkbox" name="sections[<?php echo esc_attr( $key ); ?>][gr_prix]" value="1" <?php checked( $gr_prix ); ?>> <?php esc_html_e( 'Grand Prix', 'wp-tournament-manager' ); ?></label></p>
-						<p><label><?php esc_html_e( 'GP points', 'wp-tournament-manager' ); ?> <input type="number" min="0" max="999" class="small-text" name="sections[<?php echo esc_attr( $key ); ?>][gp_pts]" value="<?php echo esc_attr( $gp_pts ); ?>"></label></p>
+						<p><label><input type="checkbox" name="sections[<?php echo esc_attr( $key ); ?>][gr_prix]" value="1" <?php checked( $gr_prix ); ?> data-wpmtm-gr-prix> <?php esc_html_e( 'Grand Prix', 'wp-tournament-manager' ); ?></label></p>
+						<p><label><?php esc_html_e( 'GP points', 'wp-tournament-manager' ); ?> <input type="number" min="0" max="999" class="small-text" name="sections[<?php echo esc_attr( $key ); ?>][gp_pts]" value="<?php echo esc_attr( $gp_pts ); ?>" data-wpmtm-gp-pts <?php disabled( ! $gr_prix ); ?>></label></p>
 						<p><label><?php esc_html_e( 'Scholastic level', 'wp-tournament-manager' ); ?> <input type="text" maxlength="1" class="small-text" name="sections[<?php echo esc_attr( $key ); ?>][sch_lvl]" value="<?php echo esc_attr( $sch_lvl ); ?>"></label></p>
 					</div>
 				</details>
@@ -238,22 +267,29 @@ class WPMTM_Admin_Sections {
 		if ( ! $tournament ) {
 			wp_die( esc_html__( 'Tournament not found.', 'wp-tournament-manager' ) );
 		}
+		if ( ! WPMTM_Roles::user_can_manage_tournament( $tournament ) ) {
+			wp_die( esc_html__( 'No permission to edit this tournament.', 'wp-tournament-manager' ) );
+		}
 
 		global $wpdb;
 		$table = WPMTM_Schema::table( 'sections' );
 
 		// phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- each $row field is individually sanitized (sanitize_text_field()/absint()) in the foreach loop below; this line only unslashes the raw array.
 		$rows    = ( isset( $_POST['sections'] ) && is_array( $_POST['sections'] ) ) ? wp_unslash( $_POST['sections'] ) : array();
-		$removed = array();
-		if ( isset( $_POST['removed_sections'] ) ) {
-			$removed = array_filter( array_map( 'absint', explode( ',', sanitize_text_field( wp_unslash( $_POST['removed_sections'] ) ) ) ) );
-		}
+		$removed = $this->parse_removed_ids( 'removed_sections' );
 
 		$mismatched  = array();
 		$failed_rows = 0;
 
 		foreach ( $rows as $key => $row ) {
 			$sec_name = isset( $row['sec_name'] ) ? sanitize_text_field( $row['sec_name'] ) : '';
+			// Audit item 65: wpmtm_sections.sec_name is varchar(191)
+			// (class-wpmtm-schema.php); cap it the same way
+			// class-wpmtm-admin-players.php now caps player names, so an
+			// over-length section name fails cleanly at this point rather
+			// than tripping MySQL strict mode on the write with no
+			// indication length was the cause.
+			$sec_name = mb_substr( $sec_name, 0, 191 );
 			$r_system = isset( $row['r_system'] ) ? strtoupper( sanitize_text_field( $row['r_system'] ) ) : 'R';
 			if ( ! in_array( $r_system, array( 'R', 'Q', 'B' ), true ) ) {
 				$r_system = 'R';
@@ -270,10 +306,24 @@ class WPMTM_Admin_Sections {
 			if ( 'S' !== $trn_type && ! WPMTM_Pairing_Aid::is_round_robin_type( $trn_type ) ) {
 				$trn_type = 'S';
 			}
+			// Cycles only mean anything for a round-robin-like section, so a
+			// Swiss section is always stored as a single cycle no matter what
+			// the form posted. normalize_cycles() clamps anything else.
+			$cycles = WPMTM_Pairing_Aid::is_round_robin_type( $trn_type )
+				? WPMTM_Pairing_Aid::normalize_cycles( isset( $row['cycles'] ) ? $row['cycles'] : 1 )
+				: 1;
 			$sch_lvl  = isset( $row['sch_lvl'] ) ? sanitize_text_field( $row['sch_lvl'] ) : '';
 			$sch_lvl  = '' !== $sch_lvl ? strtoupper( substr( $sch_lvl, 0, 1 ) ) : null;
 			$gr_prix  = ! empty( $row['gr_prix'] ) ? 'Y' : 'N';
-			$gp_pts   = isset( $row['gp_pts'] ) ? max( 0, absint( $row['gp_pts'] ) ) : 0;
+			// GP points only mean anything for a Grand Prix section, so a
+			// section with the box unchecked is always stored at 0 no matter
+			// what the form posted. Without this the two Advanced fields could
+			// contradict each other all the way into the DBF - S_GR_PRIX 'N'
+			// alongside a non-zero S_GP_PTS - which is exactly the sort of
+			// inconsistency the export validator would have to explain later.
+			// Same "the flag decides, the detail follows" rule the cycles field
+			// above uses for Swiss sections.
+			$gp_pts   = ( 'Y' === $gr_prix && isset( $row['gp_pts'] ) ) ? max( 0, absint( $row['gp_pts'] ) ) : 0;
 			$rated    = ! empty( $row['rated'] ) ? 1 : 0;
 			// No FIDE support (owner decision 2026-07-10, docs/SPEC.md
 			// "FIDE flag passthrough - REVERTED"). Always 'N'; the 'fide'
@@ -290,22 +340,32 @@ class WPMTM_Admin_Sections {
 			}
 
 			// Auto-set Round Robin / Quad rounds (docs/SPEC.md, "Decisions
-			// (2026-07-16, auto-set Round Robin / Quad rounds)"): only
-			// auto-fill when the posted Rounds field is empty (0) or still
-			// equals the value we last auto-suggested for this section
-			// (auto_rounds_hint) - so a TD's deliberate override is never
-			// clobbered, but an untouched auto-filled value keeps tracking
-			// the roster as it changes. Swiss sections never auto-fill and
-			// always clear the hint.
+			// (2026-07-16, auto-set Round Robin / Quad rounds)"). Swiss
+			// sections never auto-fill and always clear the hint.
+			//
+			// Round Robin only auto-fills when the posted Rounds field is
+			// empty (0) or still equals the value we last auto-suggested for
+			// this section (auto_rounds_hint), so a TD's deliberate override
+			// is never clobbered, but an untouched auto-filled value keeps
+			// tracking the roster as it changes.
+			//
+			// Corrected 2026-08-14 (audit item 63): this comment used to
+			// describe Quad the same way, which the code never did - the
+			// leading 'Q' === $trn_type clause always auto-fills, with no
+			// override check at all. That is deliberate: a quad is fixed at
+			// 3 rounds (x cycles) by definition regardless of player count,
+			// so there is no "TD's deliberate override" to protect - any
+			// value a quad section carries other than 3 x cycles is stale by
+			// construction and worth overwriting on every save.
 			$existing_section = ctype_digit( (string) $key ) ? WPMTM_Repository::get_section( (int) $key ) : null;
 			$auto_rounds_hint = null;
 			if ( WPMTM_Pairing_Aid::is_round_robin_type( $trn_type ) ) {
 				$prev_hint = ( $existing_section && null !== $existing_section->auto_rounds_hint )
 					? (int) $existing_section->auto_rounds_hint
 					: null;
-				if ( 0 === $tot_rnds || ( null !== $prev_hint && $prev_hint === $tot_rnds ) ) {
+				if ( 'Q' === $trn_type || 0 === $tot_rnds || ( null !== $prev_hint && $prev_hint === $tot_rnds ) ) {
 					$player_count     = $existing_section ? WPMTM_Repository::count_players( (int) $existing_section->id ) : 0;
-					$tot_rnds         = WPMTM_Pairing_Aid::suggested_rounds( $trn_type, $player_count );
+					$tot_rnds         = WPMTM_Pairing_Aid::suggested_rounds( $trn_type, $player_count, $cycles );
 					$auto_rounds_hint = $tot_rnds;
 				}
 			}
@@ -317,13 +377,15 @@ class WPMTM_Admin_Sections {
 				'trn_type'         => $trn_type,
 				'tot_rnds'         => $tot_rnds,
 				'auto_rounds_hint' => $auto_rounds_hint,
+				'cycles'           => $cycles,
 				'sch_lvl'          => $sch_lvl,
 				'gr_prix'          => $gr_prix,
 				'gp_pts'           => $gp_pts,
 				'fide'             => $fide,
 				'rated'            => $rated,
 			);
-			$formats = array( '%s', '%s', '%s', '%s', '%d', '%d', '%s', '%s', '%d', '%s', '%d' );
+			// Positional: this list must stay in the same order as $data above.
+			$formats = array( '%s', '%s', '%s', '%s', '%d', '%d', '%d', '%s', '%s', '%d', '%s', '%d' );
 
 			if ( ctype_digit( (string) $key ) ) {
 				$section_id = (int) $key;
@@ -341,6 +403,12 @@ class WPMTM_Admin_Sections {
 				++$failed_rows;
 			}
 		}
+
+		// This handler writes wpmtm_sections with its own $wpdb calls in the
+		// loop above, so it drops the repository's per-request read memo itself
+		// (audit item 48). delete_section_cascade() and renumber_sections()
+		// below flush again on their own.
+		WPMTM_Repository::flush_memo();
 
 		foreach ( $removed as $section_id ) {
 			WPMTM_Repository::delete_section_cascade( $section_id, $tournament_id );
@@ -365,15 +433,19 @@ class WPMTM_Admin_Sections {
 		} else {
 			$notice_parts[] = __( 'Sections saved.', 'wp-tournament-manager' );
 		}
-		if ( $failed_rows > 0 ) {
-			$notice_parts[] = sprintf(
-				/* translators: %d: number of section rows that could not be saved */
-				__( '%d row(s) could not be saved.', 'wp-tournament-manager' ),
-				$failed_rows
-			);
+		$failed_notice = $this->failed_rows_notice( $failed_rows );
+		if ( '' !== $failed_notice ) {
+			$notice_parts[] = $failed_notice;
 		}
 		$notice_type = $failed_rows > 0 ? 'warning' : ( $mismatched ? 'warning' : 'success' );
-		$this->set_notice( $notice_type, implode( ' ', $notice_parts ), (bool) $mismatched );
+		// The mismatch branch above builds real markup (a linked section-name
+		// list), so it goes through the notice pipeline's HTML path. That path
+		// emits the message as-is - see WPMTM_Admin_Shared::render_notices() -
+		// so supply the paragraph wrapper here rather than relying on it.
+		$notice_message = $mismatched
+			? '<p>' . implode( ' ', $notice_parts ) . '</p>'
+			: implode( ' ', $notice_parts );
+		$this->set_notice( $notice_type, $notice_message, (bool) $mismatched );
 
 		wp_safe_redirect( add_query_arg( array( 'page' => 'wpmtm-edit', 'id' => $tournament_id ), admin_url( 'admin.php' ) ) );
 		exit;

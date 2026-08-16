@@ -19,10 +19,30 @@ if ( ! defined( 'ABSPATH' ) ) {
  * WPMTM_Frontend (public render path) and WPMTM_Frontend_TD (data reuse),
  * so its constructor is empty and it does not use WPMTM_Admin_Shared: it
  * never renders a notice itself (build_block() calls render_notices()
- * before this class runs) and never gates on WPMTM_CAPABILITY (this is
- * public data, shown to every visitor).
+ * before this class runs).
+ *
+ * The standings, wall chart, and pairings tables themselves are public data
+ * shown to every visitor. Two things layered on top of them are not, and
+ * each gates itself: the TD command row (render_td_command_row()) and the
+ * editor-only player card composed in from WPMTM_Frontend_Public_Card. Both
+ * gate on WPMTM_Roles::user_can_manage_tournament(), not on a bare
+ * WPMTM_CAPABILITY check - see the card trait's docblock for why that
+ * distinction matters on a shared multi-club install (audit item 37).
  */
 class WPMTM_Frontend_Public {
+
+	// Split across trait files (2026-07-29 segmentation) to keep this file
+	// small; each is composed in verbatim, so every method keeps its
+	// visibility and $this semantics and every call site is unchanged. The
+	// entry points, print toolbar, and shared utilities (map_players,
+	// section_data_arrays, format_score, render_avatar) stay here:
+	//   - WPMTM_Frontend_Public_Standings: render_section_standings.
+	//   - WPMTM_Frontend_Public_WallChart: the wall-chart table and wrapper.
+	//   - WPMTM_Frontend_Public_Pairings:  the player-facing pairings tab.
+	use WPMTM_Frontend_Public_Standings;
+	use WPMTM_Frontend_Public_WallChart;
+	use WPMTM_Frontend_Public_Pairings;
+	use WPMTM_Frontend_Public_Card;
 
 	private static $instance = null;
 
@@ -123,6 +143,7 @@ class WPMTM_Frontend_Public {
 	 *                              note can never enter that HTML at all.
 	 */
 	public function render_public_block( $tournament, $show_td_note = false ) {
+		$this->ensure_attendee_ids_linked( $tournament );
 		$sections    = WPMTM_Repository::get_sections( $tournament->id );
 		$show_photos = (bool) $tournament->show_photos;
 		?>
@@ -167,6 +188,7 @@ class WPMTM_Frontend_Public {
 	 * @param object $tournament
 	 */
 	public function render_standings_only( $tournament ) {
+		$this->ensure_attendee_ids_linked( $tournament );
 		// Print is the first button IN the command row (2026-07-22: owner
 		// wants it immediately before "Edit tournament", not its own toolbar
 		// stacked above, which was the 2026-07-21 arrangement).
@@ -206,8 +228,19 @@ class WPMTM_Frontend_Public {
 	 * an anonymous or non-TD visitor.
 	 *
 	 * @param object $tournament
+	 * @param string $print_scope
+	 * @param string $leading_html Optional pre-rendered, already-escaped HTML
+	 *                             inserted as the FIRST children of the
+	 *                             toolbar, before Print/Edit/Lock/Export. Used
+	 *                             by the Rounds tab to fold its Pair/Results
+	 *                             mode switch into this same row (owner
+	 *                             decision, 2026-08-14) rather than stacking a
+	 *                             second row above it - this method stays
+	 *                             generic (no knowledge of pairing/rounds) by
+	 *                             taking the markup as a string rather than a
+	 *                             mode value.
 	 */
-	public function render_td_command_row( $tournament, $print_scope = '' ) {
+	public function render_td_command_row( $tournament, $print_scope = '', $leading_html = '' ) {
 		if ( ! $tournament || ! WPMTM_Roles::user_can_manage_tournament( $tournament ) ) {
 			return;
 		}
@@ -223,6 +256,9 @@ class WPMTM_Frontend_Public {
 		?>
 		<div class="wpmtm-toolbar wpmtm-td-command-row no-print">
 			<?php
+			if ( '' !== $leading_html ) {
+				echo $leading_html; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- caller-built markup, already escaped at the point each value was output (see WPMTM_Frontend_TD_Panel::rounds_mode_toggle_html()); no user input reaches this string un-escaped.
+			}
 			// Owner request (2026-07-22): on Standings AND Wall chart, Print
 			// is the FIRST command, immediately before "Edit tournament" -
 			// not its own toolbar stacked above (the 2026-07-21 arrangement).
@@ -241,6 +277,7 @@ class WPMTM_Frontend_Public {
 				<?php wp_nonce_field( 'wpmtm_toggle_lock_' . $tournament->id, 'wpmtm_toggle_lock_nonce' ); ?>
 				<input type="hidden" name="action" value="wpmtm_toggle_lock">
 				<input type="hidden" name="tournament_id" value="<?php echo esc_attr( $tournament->id ); ?>">
+				<input type="hidden" name="wpmtm_return_hash" value="">
 				<button type="submit" class="wpmtm-btn">
 					<?php echo $locked ? esc_html__( 'Unlock tournament', 'wp-tournament-manager' ) : esc_html__( 'Lock tournament', 'wp-tournament-manager' ); ?>
 				</button>
@@ -260,9 +297,10 @@ class WPMTM_Frontend_Public {
 	 * section has both a round count set and every one of those rounds
 	 * entered (docs/SPEC.md, 2026-07-21) - the same completeness signal
 	 * WPMTM_Wizard::build_state()'s 'sections_complete' uses for the setup
-	 * guide's own 'export' step, re-derived here rather than shared
-	 * because that method is protected on a different class or (against
-	 * the underlying repository data) would sit oddly. An unrated
+	 * guide's own 'export' step. Both now ask
+	 * WPMTM_Round_Selector::section_complete() rather than each keeping its
+	 * own copy of the rule, which is where the two had already started to
+	 * drift apart in wording (audit item 54). An unrated
 	 * tournament, or one with rounds still outstanding, has nothing
 	 * meaningful to export yet, so the command link is not shown rather
 	 * than linking to an export box that will only report errors.
@@ -279,12 +317,13 @@ class WPMTM_Frontend_Public {
 			return false;
 		}
 		$section_ids = wp_list_pluck( $sections, 'id' );
-		$rounds_map  = WPMTM_Repository::rounds_with_results_by_sections( $section_ids );
+		// Scored, not merely paired - see rounds_fully_scored()'s docblock.
+		// Offering the USCF export for an event whose rounds have only been
+		// paired would hand the TD an export full of missing results.
+		$rounds_map  = WPMTM_Repository::rounds_fully_scored_by_sections( $section_ids );
 		foreach ( $sections as $section ) {
-			$sid       = (int) $section->id;
-			$tot_rnds  = (int) $section->tot_rnds;
-			$done      = isset( $rounds_map[ $sid ] ) ? count( $rounds_map[ $sid ] ) : 0;
-			if ( $tot_rnds < 1 || $done < $tot_rnds ) {
+			$sid = (int) $section->id;
+			if ( ! WPMTM_Round_Selector::section_complete( $section->tot_rnds, isset( $rounds_map[ $sid ] ) ? $rounds_map[ $sid ] : array() ) ) {
 				return false;
 			}
 		}
@@ -307,6 +346,7 @@ class WPMTM_Frontend_Public {
 	 * @param object $tournament
 	 */
 	public function render_wall_chart_only( $tournament ) {
+		$this->ensure_attendee_ids_linked( $tournament );
 		$sections = WPMTM_Repository::get_sections( $tournament->id );
 		if ( empty( $sections ) ) {
 			$this->render_td_command_row( $tournament );
@@ -444,258 +484,7 @@ class WPMTM_Frontend_Public {
 		<?php
 	}
 
-	/**
-	 * @param object $section
-	 * @param bool   $show_photos         Tournament's show_photos flag; when
-	 *                                    true, the standings table and the
-	 *                                    wall chart below it each gain a
-	 *                                    leading avatar cell per row (see
-	 *                                    render_avatar()). When false the
-	 *                                    column is not emitted at all -
-	 *                                    today's exact layout.
-	 * @param bool   $include_wall_chart  Whether to render the wall chart
-	 *                                    (wrapped in its <details> disclosure)
-	 *                                    directly under the standings table.
-	 *                                    False from render_standings_only()
-	 *                                    above, which puts the wall chart in
-	 *                                    its own tab instead; true (default)
-	 *                                    everywhere else, preserving the
-	 *                                    original combined layout.
-	 * @param bool   $show_td_note        Whether the section-not-complete
-	 *                                    note is allowed to render for a
-	 *                                    WPMTM_CAPABILITY user here. Default
-	 *                                    false; both callers of
-	 *                                    render_public_block() and the sole
-	 *                                    caller of render_standings_only()
-	 *                                    decide the right value for their
-	 *                                    own caching guarantees - see those
-	 *                                    methods' docblocks. Never shown to
-	 *                                    the public regardless of this flag:
-	 *                                    still gated on current_user_can()
-	 *                                    below.
-	 */
-	protected function render_section_standings( $section, $show_photos = false, $include_wall_chart = true, $show_td_note = false ) {
-		list( $players, $games, $byes ) = $this->section_data_arrays( $section );
-		?>
-		<div class="wpmtm-section-standings">
-			<h3><?php echo esc_html( $section->sec_name ); ?></h3>
-			<?php if ( empty( $games ) && empty( $byes ) ) : ?>
-				<p><?php esc_html_e( 'No results yet.', 'wp-tournament-manager' ); ?></p>
-			<?php else : ?>
-				<?php
-				$standings = WPMTM_Scoring::standings( $players, $games, $byes );
 
-				// Same completeness test as WPMTM_Wizard::build_state() (docs/SPEC.md,
-				// "Decisions (2026-07-18, rank by score until complete)"): a
-				// tot_rnds of 0 is never complete, and every planned round
-				// must already have at least one game or bye recorded.
-				// Mid-tournament, tiebreaks are noise (a round-1 "leader" is
-				// really just the player who happened to draw the strongest
-				// opponent so far), so ranks group on score alone until
-				// then - the tiebreak columns keep displaying throughout.
-				$tot_rnds          = (int) $section->tot_rnds;
-				$rounds_done       = WPMTM_Repository::rounds_with_results( $section->id );
-				$section_complete  = $tot_rnds >= 1 && count( $rounds_done ) >= $tot_rnds;
-				$ranks             = WPMTM_Scoring::ranks_for( $standings, $section_complete );
-
-				$pair_num_by_id = array();
-				$max_round      = (int) $section->tot_rnds;
-				foreach ( $players as $p ) {
-					$pair_num_by_id[ $p['id'] ] = $p['pair_num'];
-				}
-				foreach ( $standings as $row ) {
-					foreach ( array_keys( $row['rounds'] ) as $r ) {
-						$max_round = max( $max_round, (int) $r );
-					}
-				}
-				?>
-				<table class="wpmtm-standings-table wpmtm-table">
-					<thead>
-						<tr>
-							<?php if ( $show_photos ) : ?>
-								<th class="wpmtm-col-photo"><span class="screen-reader-text"><?php esc_html_e( 'Photo', 'wp-tournament-manager' ); ?></span></th>
-							<?php endif; ?>
-							<th><?php esc_html_e( 'Rank', 'wp-tournament-manager' ); ?></th>
-							<th><?php esc_html_e( 'Name', 'wp-tournament-manager' ); ?></th>
-							<th><?php esc_html_e( 'Score', 'wp-tournament-manager' ); ?></th>
-							<th title="<?php esc_attr_e( 'Modified Median', 'wp-tournament-manager' ); ?>"><?php esc_html_e( 'MM', 'wp-tournament-manager' ); ?></th>
-							<th title="<?php esc_attr_e( 'Solkoff', 'wp-tournament-manager' ); ?>"><?php esc_html_e( 'Sol', 'wp-tournament-manager' ); ?></th>
-							<th title="<?php esc_attr_e( 'Cumulative', 'wp-tournament-manager' ); ?>"><?php esc_html_e( 'Cum', 'wp-tournament-manager' ); ?></th>
-							<th title="<?php esc_attr_e( 'Cumulative of Opposition', 'wp-tournament-manager' ); ?>"><?php esc_html_e( 'CO', 'wp-tournament-manager' ); ?></th>
-							<?php for ( $r = 1; $r <= $max_round; $r++ ) : ?>
-								<th>
-									<?php
-									printf(
-										/* translators: %d: round number */
-										esc_html__( 'Rd %d', 'wp-tournament-manager' ),
-										(int) $r
-									);
-									?>
-								</th>
-							<?php endfor; ?>
-						</tr>
-					</thead>
-					<tbody>
-						<?php foreach ( $standings as $i => $row ) : ?>
-							<tr>
-								<?php if ( $show_photos ) : ?>
-									<td class="wpmtm-avatar-cell">
-										<?php
-										echo self::render_avatar( isset( $row['photo_id'] ) ? $row['photo_id'] : null ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- render_avatar() returns either wp_get_attachment_image()'s own escaped markup or a static, hardcoded silhouette SVG with an escaped aria-label; see that method's docblock.
-										?>
-									</td>
-								<?php endif; ?>
-								<td><?php echo esc_html( $ranks[ $i ] ); ?></td>
-								<td>
-									<?php echo esc_html( WPMTM_Name::display( $row['name'], ! empty( $row['family_name_first'] ) ) ); ?>
-									<?php if ( isset( $row['withdrawn_after_round'] ) && null !== $row['withdrawn_after_round'] ) : ?>
-										<?php
-										printf(
-											/* translators: %d: round number after which the player withdrew */
-											' ' . esc_html__( '(withdrew after round %d)', 'wp-tournament-manager' ),
-											(int) $row['withdrawn_after_round']
-										);
-										?>
-									<?php endif; ?>
-								</td>
-								<td><?php echo esc_html( self::format_score( $row['score'] ) ); ?></td>
-								<td><?php echo esc_html( self::format_score( $row['modified_median'] ) ); ?></td>
-								<td><?php echo esc_html( self::format_score( $row['solkoff'] ) ); ?></td>
-								<td><?php echo esc_html( self::format_score( $row['cumulative'] ) ); ?></td>
-								<td><?php echo esc_html( self::format_score( $row['cumulative_opp'] ) ); ?></td>
-								<?php for ( $r = 1; $r <= $max_round; $r++ ) : ?>
-									<?php $cell = isset( $row['rounds'][ $r ] ) ? $row['rounds'][ $r ] : null; ?>
-									<td><?php echo esc_html( $this->compact_round_result( $cell, $pair_num_by_id ) ); ?></td>
-								<?php endfor; ?>
-							</tr>
-						<?php endforeach; ?>
-					</tbody>
-				</table>
-				<p class="wpmtm-standings-help description">
-					<?php esc_html_e( 'Ties in score are broken left to right by Modified Median, then Solkoff, then Cumulative, then Cumulative of Opposition (USCF rule 34E).', 'wp-tournament-manager' ); ?>
-				</p>
-				<?php if ( $show_td_note && ! $section_complete && current_user_can( WPMTM_CAPABILITY ) ) : ?>
-					<p class="wpmtm-standings-td-note">
-						<?php esc_html_e( 'TD note (not shown to the public): ranked by score alone until every round in this section is entered. The tiebreak columns above will then decide placement.', 'wp-tournament-manager' ); ?>
-					</p>
-				<?php endif; ?>
-				<?php if ( $include_wall_chart ) : ?>
-					<?php $this->render_wall_chart( $players, $games, $byes, $max_round, $show_photos ); ?>
-				<?php endif; ?>
-			<?php endif; ?>
-		</div>
-		<?php
-	}
-
-	/**
-	 * Bare wall chart <table>: WPMTM_Scoring::crosstable() rendered as one
-	 * row per player in pair_num order (not rank), with the per-round
-	 * compact result cell plus the running score under it and a final total
-	 * column. No wrapper of any kind - callers decide how (or whether) to
-	 * frame it: render_wall_chart() below wraps it in a <details> disclosure
-	 * for the no-tabs paths, while render_wall_chart_only() renders it
-	 * directly, since the Wall chart tab itself is already the disclosure.
-	 * Public data, never gated by WPMTM_CAPABILITY; nothing here writes
-	 * anything (docs/SPEC.md, "Decisions (2026-07-10, wall chart)").
-	 *
-	 * @param bool $show_photos Tournament's show_photos flag; see
-	 *                          render_section_standings() above.
-	 */
-	protected function render_wall_chart_table( array $players, array $games, array $byes, $max_round, $show_photos = false ) {
-		$crosstable = WPMTM_Scoring::crosstable( $players, $games, $byes );
-		if ( empty( $crosstable ) ) {
-			return;
-		}
-		?>
-		<table class="wpmtm-wall-chart-table wpmtm-table">
-			<thead>
-				<tr>
-					<?php if ( $show_photos ) : ?>
-						<th class="wpmtm-col-photo"><span class="screen-reader-text"><?php esc_html_e( 'Photo', 'wp-tournament-manager' ); ?></span></th>
-					<?php endif; ?>
-					<th><?php esc_html_e( '#', 'wp-tournament-manager' ); ?></th>
-					<th><?php esc_html_e( 'Name', 'wp-tournament-manager' ); ?></th>
-					<?php for ( $r = 1; $r <= $max_round; $r++ ) : ?>
-						<th>
-							<?php
-							printf(
-								/* translators: %d: round number */
-								esc_html__( 'Rd %d', 'wp-tournament-manager' ),
-								(int) $r
-							);
-							?>
-						</th>
-					<?php endfor; ?>
-					<th><?php esc_html_e( 'Total', 'wp-tournament-manager' ); ?></th>
-				</tr>
-			</thead>
-			<tbody>
-				<?php foreach ( $crosstable as $row ) : ?>
-					<tr>
-						<?php if ( $show_photos ) : ?>
-							<td class="wpmtm-avatar-cell">
-								<?php
-								echo self::render_avatar( isset( $row['photo_id'] ) ? $row['photo_id'] : null ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- render_avatar() returns either wp_get_attachment_image()'s own escaped markup or a static, hardcoded silhouette SVG with an escaped aria-label; see that method's docblock.
-								?>
-							</td>
-						<?php endif; ?>
-						<td><?php echo esc_html( $row['pair_num'] ); ?></td>
-						<td><?php echo esc_html( WPMTM_Name::display( $row['name'], ! empty( $row['family_name_first'] ) ) ); ?></td>
-						<?php for ( $r = 1; $r <= $max_round; $r++ ) : ?>
-							<?php $cell = isset( $row['rounds'][ $r ] ) ? $row['rounds'][ $r ] : null; ?>
-							<td>
-								<?php if ( null !== $cell ) : ?>
-									<?php echo esc_html( $cell['cell'] ); ?><br>
-									<span class="wpmtm-wall-chart-running"><?php echo esc_html( self::format_score( $cell['running'] ) ); ?></span>
-								<?php endif; ?>
-							</td>
-						<?php endfor; ?>
-						<td><?php echo esc_html( self::format_score( $row['score'] ) ); ?></td>
-					</tr>
-				<?php endforeach; ?>
-			</tbody>
-		</table>
-		<?php
-	}
-
-	/**
-	 * Public, read-only wall chart, collapsed by default behind a native
-	 * <details> element so it does not compete with the standings table
-	 * above it on the no-tabs paths (render_public_block(): the
-	 * [wpmtm_standings] shortcode and the "wp-etr absent, or its filter
-	 * never fired this request" inline fallback). When wp-etr tabs are
-	 * active the wall chart gets its own tab instead and uses
-	 * render_wall_chart_table() directly - see render_wall_chart_only().
-	 *
-	 * @param bool $show_photos Tournament's show_photos flag; see
-	 *                          render_section_standings() above.
-	 */
-	protected function render_wall_chart( array $players, array $games, array $byes, $max_round, $show_photos = false ) {
-		ob_start();
-		$this->render_wall_chart_table( $players, $games, $byes, $max_round, $show_photos );
-		$table_html = trim( ob_get_clean() );
-		if ( '' === $table_html ) {
-			return; // crosstable was empty - see render_wall_chart_table()'s guard.
-		}
-		?>
-		<details class="wpmtm-wall-chart">
-			<summary><?php esc_html_e( 'Wall chart', 'wp-tournament-manager' ); ?></summary>
-			<?php echo $table_html; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- $table_html is entirely render_wall_chart_table()'s own escaped output, captured above. ?>
-		</details>
-		<?php
-	}
-
-	/** Compact per-round cell: token letter + opponent pair_num (no color letter), e.g. "W12", "L3", "B". */
-	protected function compact_round_result( $round_data, array $pair_num_by_id ) {
-		if ( null === $round_data ) {
-			return '';
-		}
-		$text = $round_data['token_result'];
-		if ( null !== $round_data['opponent_player_id'] && isset( $pair_num_by_id[ $round_data['opponent_player_id'] ] ) ) {
-			$text .= $pair_num_by_id[ $round_data['opponent_player_id'] ];
-		}
-		return $text;
-	}
 
 	/**
 	 * Formats a score to one decimal place, e.g. 2 -> "2.0", 2.5 -> "2.5".
@@ -849,6 +638,14 @@ class WPMTM_Frontend_Public {
 				'pair_num'               => (int) $p->pair_num,
 				'name'                   => $p->name,
 				'rating'                 => $p->rating,
+				// USCF member id, carried through purely so the editor-only
+				// player card can tell the two "no linked registration" cases
+				// apart (audit item 56): a player with no member id can never
+				// be linked by backfill_attendee_ids(), which matches on member
+				// id alone, so the card says to add one rather than telling the
+				// TD to re-import. Never rendered for the public - the card
+				// itself is ownership-gated.
+				'mem_id'                 => null !== $p->mem_id ? (string) $p->mem_id : '',
 				'withdrawn_after_round'  => null !== $p->withdrawn_after_round ? (int) $p->withdrawn_after_round : null,
 				'photo_id'               => null !== $p->photo_id ? (int) $p->photo_id : null,
 				// Change 2 (family-name-first display option): per-player
@@ -879,226 +676,15 @@ class WPMTM_Frontend_Public {
 				// wpmtm_players.notes itself is nullable in the DB but a
 				// bare string everywhere it is displayed.
 				'notes'                 => null !== $p->notes ? (string) $p->notes : '',
+				// Source ETECF/Event-Tickets attendee post id (DB_VERSION
+				// 0.1.14), or null for CSV/manually-added players. Carried
+				// through so the editor-only player card can link back to the
+				// live registration (edit form, admin note, contact email);
+				// never emitted for the public.
+				'attendee_id'           => isset( $p->attendee_id ) && null !== $p->attendee_id ? (int) $p->attendee_id : null,
 			);
 		}
 		return $players;
 	}
 
-	// -----------------------------------------------------------------
-	// Public Pairings tab (docs/SPEC.md, 2026-07-23, player-facing pairings).
-	// -----------------------------------------------------------------
-
-	/**
-	 * The public Pairings tab: a view-only board list per section for the
-	 * latest fully-paired ("published") round, with a read-only selector back
-	 * to earlier published rounds. Unlike the TD Rounds tab this renders for
-	 * every visitor, so it never exposes an entry form, the pairing aid, or
-	 * any command that changes state - just who plays whom, on which board,
-	 * with which color, and the result once the TD has entered it.
-	 *
-	 * A round only appears here once WPMTM_Round_Selector::published_rounds()
-	 * considers it fully paired, so a draft the TD is mid-entry never flashes
-	 * to players. When nothing is published yet, each section shows an empty
-	 * state rather than a blank tab.
-	 *
-	 * @param object $tournament
-	 */
-	public function render_pairings_only( $tournament ) {
-		$sections = WPMTM_Repository::get_sections( $tournament->id );
-		if ( empty( $sections ) ) {
-			echo '<p>' . esc_html__( 'No sections have been set up yet.', 'wp-tournament-manager' ) . '</p>';
-			return;
-		}
-
-		// Full TD command bar (2026-07-23), same call Standings/Wall chart use:
-		// self-gates on WPMTM_CAPABILITY, so a public visitor sees no toolbar
-		// here at all (previously the "Print pairings" button was shown to
-		// everyone). Scope "pairings" clones #etr-panel-pairings with
-		// .no-print / .wpmtm-toolbar stripped for the print, same as before -
-		// only the board tables print, not the toolbar or round selector.
-		$this->render_td_command_row( $tournament, 'pairings' );
-
-		$multi = count( $sections ) > 1;
-		foreach ( $sections as $section ) {
-			$this->render_pairings_section( $section, $multi );
-		}
-	}
-
-	/**
-	 * One section's board list for its selected published round. The selected
-	 * round defaults to the latest published one; a ?wpmtm_pround_{id}=N query
-	 * param (the read-only selector's own links) picks an earlier published
-	 * round, and is ignored unless it names a genuinely published round, so a
-	 * hand-edited URL can never surface an unpublished draft.
-	 *
-	 * @param object $section
-	 * @param bool   $multi   Whether the tournament has more than one section
-	 *                        (adds the section-name heading, matching
-	 *                        render_standings_only()'s per-section layout).
-	 */
-	protected function render_pairings_section( $section, $multi ) {
-		list( $players, $games, $byes ) = $this->section_data_arrays( $section );
-		$published = WPMTM_Round_Selector::published_rounds( $players, $games, $byes, (int) $section->tot_rnds );
-		?>
-		<div class="wpmtm-pairings-section">
-			<?php if ( $multi ) : ?>
-				<h3><?php echo esc_html( $section->sec_name ); ?></h3>
-			<?php endif; ?>
-
-			<?php
-			if ( empty( $published ) ) {
-				echo '<p class="wpmtm-pairings-empty">' . esc_html__( 'Pairings for the next round will appear here once they are posted.', 'wp-tournament-manager' ) . '</p>';
-				echo '</div>';
-				return;
-			}
-
-			$latest        = (int) max( $published );
-			$round_param   = 'wpmtm_pround_' . (int) $section->id;
-			$selected      = $latest;
-			if ( isset( $_GET[ $round_param ] ) ) { // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- read-only round selector, not a state change; no writes happen on this public tab.
-				$requested = absint( wp_unslash( $_GET[ $round_param ] ) ); // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- read-only, see note above.
-				if ( in_array( $requested, $published, true ) ) {
-					$selected = $requested;
-				}
-			}
-
-			$this->render_pairings_round_selector( $published, $selected, $round_param );
-
-			// Player-id lookups for the name/color rendering below; the pure
-			// helpers work in ids, the WP layer resolves them to display names.
-			$name_by_id   = array();
-			$family_by_id = array();
-			foreach ( $players as $p ) {
-				$name_by_id[ (int) $p['id'] ]   = $p['name'];
-				$family_by_id[ (int) $p['id'] ] = ! empty( $p['family_name_first'] );
-			}
-
-			$round_games = array_filter( $games, function ( $g ) use ( $selected ) {
-				return (int) $g['round'] === (int) $selected;
-			} );
-			usort( $round_games, function ( $a, $b ) {
-				return (int) $a['board'] <=> (int) $b['board'];
-			} );
-
-			$round_byes = array_filter( $byes, function ( $b ) use ( $selected ) {
-				return (int) $b['round'] === (int) $selected;
-			} );
-			?>
-
-			<table class="wpmtm-table wpmtm-pairings-table">
-				<caption>
-					<?php
-					/* translators: %d: round number */
-					printf( esc_html__( 'Round %d', 'wp-tournament-manager' ), (int) $selected );
-					?>
-				</caption>
-				<thead>
-					<tr>
-						<th scope="col"><?php esc_html_e( 'Board', 'wp-tournament-manager' ); ?></th>
-						<th scope="col"><?php esc_html_e( 'White', 'wp-tournament-manager' ); ?></th>
-						<th scope="col"><?php esc_html_e( 'Black', 'wp-tournament-manager' ); ?></th>
-						<th scope="col"><?php esc_html_e( 'Result', 'wp-tournament-manager' ); ?></th>
-					</tr>
-				</thead>
-				<tbody>
-					<?php foreach ( $round_games as $g ) : ?>
-						<?php
-						$white_id = (int) $g['white_player_id'];
-						$black_id = (int) $g['black_player_id'];
-						?>
-						<tr>
-							<td><?php echo esc_html( (int) $g['board'] ); ?></td>
-							<td><?php echo esc_html( isset( $name_by_id[ $white_id ] ) ? WPMTM_Name::display( $name_by_id[ $white_id ], ! empty( $family_by_id[ $white_id ] ) ) : '' ); ?></td>
-							<td><?php echo esc_html( isset( $name_by_id[ $black_id ] ) ? WPMTM_Name::display( $name_by_id[ $black_id ], ! empty( $family_by_id[ $black_id ] ) ) : '' ); ?></td>
-							<td><?php echo esc_html( self::pairing_result_label( $g['result'] ) ); ?></td>
-						</tr>
-					<?php endforeach; ?>
-				</tbody>
-			</table>
-
-			<?php if ( ! empty( $round_byes ) ) : ?>
-				<?php
-				$bye_names = array();
-				foreach ( $round_byes as $b ) {
-					$pid = (int) $b['player_id'];
-					if ( isset( $name_by_id[ $pid ] ) ) {
-						$bye_names[] = WPMTM_Name::display( $name_by_id[ $pid ], ! empty( $family_by_id[ $pid ] ) );
-					}
-				}
-				?>
-				<?php if ( ! empty( $bye_names ) ) : ?>
-					<p class="wpmtm-pairings-byes">
-						<strong><?php esc_html_e( 'Byes:', 'wp-tournament-manager' ); ?></strong>
-						<?php echo esc_html( implode( ', ', $bye_names ) ); ?>
-					</p>
-				<?php endif; ?>
-			<?php endif; ?>
-		</div>
-		<?php
-	}
-
-	/**
-	 * The read-only round selector for the Pairings tab, using the same
-	 * pill-band markup as the TD round selector
-	 * (WPMTM_Frontend_TD::render_round_selector(): .wpmtm-round-selector-band
-	 * / .wpmtm-round-tab, styled by assets/wpmtm-frontend.css, already loaded
-	 * on this public tab) - the two previously diverged, this tab still
-	 * showing the older plain "Round: 1 2 3" text-link version. Lists only
-	 * published rounds (unlike the TD selector's display_rounds(), which also
-	 * lists the in-progress round) and links each with the pairings query
-	 * param and #tab-pairings hash, so a click reloads on the same tab and
-	 * section round. Marked .no-print so it drops out of the printed sheet
-	 * (the round number is carried by each table's <caption> instead).
-	 *
-	 * @param int[]  $published    Published round numbers (ascending).
-	 * @param int    $selected     Currently shown round.
-	 * @param string $round_param  The wpmtm_pround_{id} query param name.
-	 */
-	protected function render_pairings_round_selector( array $published, $selected, $round_param ) {
-		if ( count( $published ) < 2 ) {
-			return; // Only one published round; nothing to switch between.
-		}
-		?>
-		<div class="wpmtm-round-selector-band wpmtm-pairings-round-selector no-print">
-			<span class="wpmtm-round-selector-label"><?php esc_html_e( 'Round', 'wp-tournament-manager' ); ?></span>
-			<div class="wpmtm-round-selector" role="group" aria-label="<?php esc_attr_e( 'Rounds', 'wp-tournament-manager' ); ?>">
-				<?php foreach ( $published as $r ) : ?>
-					<?php if ( (int) $r === (int) $selected ) : ?>
-						<span class="wpmtm-round-tab" aria-selected="true"><?php echo esc_html( $r ); ?></span>
-					<?php else : ?>
-						<a class="wpmtm-round-tab" aria-selected="false" href="<?php echo esc_url( add_query_arg( $round_param, $r ) . '#tab-pairings' ); ?>"><?php echo esc_html( $r ); ?></a>
-					<?php endif; ?>
-				<?php endforeach; ?>
-			</div>
-		</div>
-		<?php
-	}
-
-	/**
-	 * A player-friendly label for a game's stored result code (the
-	 * WPMTM_Round_Entry::GAME_RESULTS set), in the universal score notation
-	 * players recognize on a wall chart. An empty result (not yet entered)
-	 * shows a dash, so an upcoming board reads as unplayed rather than blank.
-	 *
-	 * @param string $result Stored wpmtm_games.result code.
-	 * @return string
-	 */
-	protected static function pairing_result_label( $result ) {
-		switch ( (string) $result ) {
-			case 'W':
-				return '1-0';
-			case 'B':
-				return '0-1';
-			case 'D':
-				return '½-½';
-			case 'FW':
-				return __( '1-0 (F)', 'wp-tournament-manager' );
-			case 'FB':
-				return __( '0-1 (F)', 'wp-tournament-manager' );
-			case 'FD':
-				return __( '0-0 (F)', 'wp-tournament-manager' );
-			default:
-				return ''; // Not yet entered; an upcoming board reads as blank.
-		}
-	}
 }

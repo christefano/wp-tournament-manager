@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Tournament Manager
  * Description: Club-level USCF chess tournament management: setup guide, roster import, pairing aid, round results, standings, and USCF DBF export.
- * Version: 1.4
+ * Version: 1.5.0
  * Author: Christefano Reyes
  * Plugin URI: https://github.com/christefano/wp-tournament-manager
  * Author URI: https://github.com/christefano/
@@ -18,7 +18,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'WPMTM_VERSION', '1.4' );
+define( 'WPMTM_VERSION', '1.5.0' );
 define( 'WPMTM_PLUGIN_FILE', __FILE__ );
 define( 'WPMTM_PLUGIN_DIR', plugin_dir_path( __FILE__ ) );
 define( 'WPMTM_PLUGIN_URL', plugin_dir_url( __FILE__ ) );

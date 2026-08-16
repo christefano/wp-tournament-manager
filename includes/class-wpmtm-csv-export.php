@@ -101,11 +101,20 @@ class WPMTM_CSV_Export {
 	 * same reasoning as WPMTM_DBF_Writer avoiding hand-rolled binary
 	 * packing: a player or section name containing a comma, quote, or
 	 * newline (all legal in either field) is exactly the input a manual
-	 * implode(',', ...) gets wrong.
+	 * implode(',', ...) gets wrong. fputcsv() does not defend against
+	 * spreadsheet formula injection, though: a cell starting with = + - @
+	 * (registrant-supplied names reach these cells) would execute as a
+	 * formula when the TD opens the file, so those get a leading
+	 * apostrophe, the spreadsheet convention for "literal text".
 	 */
 	protected static function rows_to_csv( array $rows ) {
 		$stream = fopen( 'php://temp', 'r+' );
 		foreach ( $rows as $row ) {
+			foreach ( $row as $i => $cell ) {
+				if ( is_string( $cell ) && isset( $cell[0] ) && in_array( $cell[0], array( '=', '+', '-', '@' ), true ) ) {
+					$row[ $i ] = "'" . $cell;
+				}
+			}
 			fputcsv( $stream, $row );
 		}
 		rewind( $stream );

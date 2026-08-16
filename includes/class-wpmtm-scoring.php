@@ -199,6 +199,11 @@ class WPMTM_Scoring {
 	 * @param array $players
 	 * @param array $games
 	 * @param array $byes
+	 * @param int   $total_rounds The tournament's announced total round
+	 *                            count (section's tot_rnds), passed through
+	 *                            to WPMTM_Tiebreaks::compute() to trigger
+	 *                            34E1's nine-or-more-round discard rule. 0
+	 *                            (default) behaves as fewer than nine.
 	 * @return array List of rows: each player's fields (id, pair_num, name,
 	 *               rating, and 'withdrawn_after_round' when the caller's
 	 *               $players rows carry it - array_merge() below passes it
@@ -209,9 +214,9 @@ class WPMTM_Scoring {
 	 *               'modified_median', 'solkoff', 'cumulative',
 	 *               'cumulative_opp' from WPMTM_Tiebreaks::compute().
 	 */
-	public static function standings( array $players, array $games, array $byes ) {
+	public static function standings( array $players, array $games, array $byes, $total_rounds = 0 ) {
 		$tally     = self::tally( $players, $games, $byes );
-		$tiebreaks = WPMTM_Tiebreaks::compute( $players, $games, $byes );
+		$tiebreaks = WPMTM_Tiebreaks::compute( $players, $games, $byes, (int) $total_rounds );
 
 		$empty_tiebreaks = array(
 			'modified_median' => 0.0,

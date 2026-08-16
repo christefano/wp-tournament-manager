@@ -41,8 +41,27 @@ class WPMTM_Plugin {
 	}
 
 	private function __construct() {
-		// Reserved for future shared hooks (cache invalidation, etc.).
+		// Let ETECF's per-attendee admin notes be VIEWED by tournament
+		// directors, not just full admins, when ETECF is present. One-
+		// directional and opt-in: ETECF applies this filter only if it is
+		// active, so registering it is harmless when ETECF is absent, and
+		// ETECF keeps no dependency on TM (docs/SPEC.md, DQ-reason grain).
+		// Editing notes still requires manage_options, enforced inside ETECF.
+		add_filter( 'etecf_admin_note_view_cap', array( __CLASS__, 'filter_etecf_admin_note_view_cap' ) );
 		// No admin UI is registered here - see WPMTM_Settings / WPMTM_Admin.
+	}
+
+	/**
+	 * Grants the tournament-director capability VIEW access to ETECF admin
+	 * notes (the DQ-reason home). ETECF ORs this with manage_options, so admins
+	 * are unaffected and TDs gain read access. See ETECF
+	 * Plugin::admin_note_view_cap().
+	 *
+	 * @param string $cap ETECF's default additional-viewer capability.
+	 * @return string
+	 */
+	public static function filter_etecf_admin_note_view_cap( $cap ) {
+		return WPMTM_CAPABILITY;
 	}
 
 	/** Plugin options merged over defaults, cached per-request. */

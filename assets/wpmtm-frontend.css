@@ -51,6 +51,48 @@
    render_round_selector()'s docblock (class-wpmtm-frontend-td.php) for
    why the old bold-line-plus-underline version made the current round
    hard to spot. */
+/* Pair / Enter results switch (2026-08-14). Rendered as this row's own first
+   flex item inside .wpmtm-td-command-row (see render_td_command_row()'s
+   $leading_html param) rather than a separate band, so it no longer needs its
+   own band/padding/background - just a segmented control sized to match the
+   .wpmtm-btn actions beside it in the same row, so the whole row reads as one
+   height even though the two groups mean different things (state versus
+   action - see rounds_mode_toggle_html()'s docblock for why they still look
+   visually distinct from each other). */
+.wpmtm-rounds-mode {
+	display: inline-flex;
+	flex-wrap: wrap;
+	gap: 6px;
+}
+
+.wpmtm-rounds-mode-tab {
+	display: inline-flex;
+	align-items: center;
+	padding: 0.4em 0.9em;
+	font-size: 0.85rem;
+	font-weight: 600;
+	line-height: 1.4;
+	color: #2271b1;
+	background: #fff;
+	border: 1px solid #8bb8e0;
+	border-radius: 4px;
+	text-decoration: none;
+	cursor: pointer;
+}
+
+a.wpmtm-rounds-mode-tab:hover,
+a.wpmtm-rounds-mode-tab:focus-visible {
+	background: #f0f6fc;
+	color: #135e96;
+}
+
+.wpmtm-rounds-mode-tab[aria-current="true"] {
+	color: #fff;
+	background: #2271b1;
+	border-color: #2271b1;
+	cursor: default;
+}
+
 .wpmtm-round-selector-band {
 	display: flex;
 	align-items: center;
@@ -75,17 +117,40 @@
 	gap: 6px;
 }
 
+/* Round pill centering, fourth attempt (2026-08-14): the previous three all
+   asked some form of flex/grid participation to do the centering (a
+   transform faking it, a reserved grid column, then flex justify-content
+   plus position:absolute to pull the checkmark out of that flex layout) and
+   every one of them rendered right-shifted in real Chrome/Safari on the live
+   page despite reading correctly in the stylesheet - reported again after
+   this exact "third attempt" shipped, so the flex/absolute combination is
+   not actually neutral: an absolutely positioned child still measurably
+   affects a flex parent's content-box sizing in at least one of the browsers
+   this was tested in, which is exactly the kind of engine-specific footgun
+   this comment kept trying to route around one layer at a time.
+   This attempt drops flex/grid participation entirely. The pill is a plain
+   inline-block with a fixed line-height matching min-height (vertical
+   centering, the oldest trick there is - no flex alignment involved) and
+   text-align: center (horizontal centering of whatever inline content the
+   pill holds, whether that is one number or a number plus a checkmark - no
+   box-model interaction between the two, because text-align does not care
+   how many inline children there are). Both the number and the checkmark
+   stay in normal document flow now; nothing is pulled out with position at
+   all. If this one also drifts, the next thing to suspect is browser default
+   spacing on the emoji glyph itself, not the layout mechanism. */
 .wpmtm-round-tab {
-	display: inline-flex;
-	align-items: center;
+	display: inline-block;
+	min-width: 2.75em; /* same footprint pending or complete, so every pill matches width */
 	min-height: 32px;
-	padding: 0.3em 0.85em;
+	line-height: 32px; /* matches min-height: a single line of inline content centers vertically. */
+	padding: 0.3em 0.6em;
 	font-size: 0.85rem;
 	font-weight: 600;
 	color: #444;
 	background: #f3f3f3;
 	border: 1px solid #cfcfcf;
 	border-radius: 4px 4px 0 0;
+	text-align: center;
 	cursor: pointer;
 }
 
@@ -101,6 +166,15 @@ a.wpmtm-round-tab:focus-visible {
 	border-color: #787c82;
 	border-bottom: 3px solid #2271b1;
 	cursor: default;
+}
+
+.wpmtm-round-tab-num {
+	line-height: 1;
+}
+
+.wpmtm-round-tab-check {
+	margin-left: 0.25em; /* breathing room now that it sits in normal flow beside the number. */
+	line-height: 1;
 }
 
 /* State-aware pairing-aid/entry-form disclosure (2026-07-24, Rounds-tab
@@ -127,6 +201,26 @@ a.wpmtm-round-tab:focus-visible {
 	margin-bottom: 12px;
 }
 
+/* Byes (2026-08-14): a nested sub-section inside the round-entry form, not a
+   top-level block like the two above, so a lighter treatment - no border/
+   background of its own, a smaller summary. Open by default in pair mode
+   (it is a pairing decision - who sits out) and collapsed in results mode,
+   where it stays reachable rather than removed because Withdraw lives inside
+   it - see render_round_entry_form()'s docblock. */
+.wpmtm-byes-details {
+	margin: 16px 0;
+}
+
+.wpmtm-byes-details > summary {
+	font-size: 1rem;
+	font-weight: 700;
+	cursor: pointer;
+}
+
+.wpmtm-byes-details[open] > summary {
+	margin-bottom: 8px;
+}
+
 /* Keep in sync with .wpmtm-wrap .wpmtm-col-num in wpmtm-admin.css (same
    values; that copy is .wpmtm-wrap-scoped for the admin roster/sections
    editors, this global one styles the front-end round-entry board row). */
@@ -146,6 +240,31 @@ a.wpmtm-round-tab:focus-visible {
 
 .wpmtm-suggest-pairings {
 	margin: 8px 0;
+}
+
+/* Print pairing sheet + Suggest pairings on one aligned row above the aid
+   (owner request 2026-08-13). The two buttons come from separate renderers
+   with their own margins; zero those inside the row and let the flex gap do
+   the spacing, and pull the aid's first line of guidance up tight under it. */
+.wpmtm-pairing-actions {
+	display: flex;
+	align-items: center;
+	flex-wrap: wrap;
+	gap: 8px;
+	margin-bottom: 8px;
+}
+
+.wpmtm-pairing-actions .wpmtm-toolbar,
+.wpmtm-pairing-actions .wpmtm-suggest-pairings {
+	/* Unwrap these so the single button inside each becomes a direct flex item
+	   of the row. The toolbar (an inline-flex div) and the suggest <p> give
+	   their buttons different vertical metrics, so the two buttons did not line
+	   up even with align-items:center on the row; as direct flex items they do. */
+	display: contents;
+}
+
+.wpmtm-pairing-aid > p:first-child {
+	margin-top: 0;
 }
 
 /* Self-disabling "Suggest pairings" button (docs/SPEC.md, 2026-07-14):
@@ -272,19 +391,57 @@ a.wpmtm-round-tab:focus-visible {
 	white-space: pre-wrap;
 }
 
-/* TD-only "why" note on the Standings table when a section is not yet
-   complete (docs/SPEC.md, "Decisions (2026-07-18, rank by score until
-   complete)"). Gated in PHP on current_user_can( WPMTM_CAPABILITY ), so
-   this class only ever prints in a TD's own render; styled distinctly
-   (italic, left border) so it visually reads as an aside rather than
-   plugin-wide help text like .wpmtm-standings-help. */
-.wpmtm-standings-td-note {
-	margin: 0.5em 0 0;
-	padding: 0.3em 0.6em;
-	font-size: 0.85em;
-	font-style: italic;
+/* TD-only note below the Standings table: the rank-by-score-until-complete
+   explanation (when the section is not yet complete) and the tiebreak order.
+   Gated in PHP on current_user_can( WPMTM_CAPABILITY ), so it only ever prints
+   in a TD's own render. Styled as an info banner matching .wpmtm-locked-banner
+   (same left-border + tinted-background treatment, info blue rather than the
+   locked banner's red) so TD-facing notices read consistently on the frontend,
+   where WordPress admin_notices never appear. */
+.wpmtm-td-note-banner {
+	margin: 12px 0 0;
+	padding: 10px 14px;
+	background: #f0f6fc;
+	border-left: 4px solid #72aee6;
+}
+
+.wpmtm-td-note-banner p {
+	margin: 4px 0;
+	font-size: 0.9em;
+	color: #50575e;
+}
+
+/* The TEC theme adds its own bottom margin to content paragraphs and beats
+   these edge rules on source order, leaving an extra blank line at the foot of
+   the banner (field report 2026-08-14). !important keeps the notice tight top
+   and bottom regardless of the theme - the same approach the TEC display:none
+   overrides elsewhere in this file already take. */
+.wpmtm-td-note-banner p:first-child {
+	margin-top: 0 !important;
+}
+
+.wpmtm-td-note-banner p:last-child {
+	margin-bottom: 0 !important;
+}
+
+/* Audit item 70: .wpmtm-round-blocked (render_section_td_panel()) had no
+   rule at all, so the sequential-gate warning ("round N cannot be saved
+   yet...") rendered identically to the plain informational .wpmtm-td-
+   note-banner it shares a base class with - the only visual difference
+   between "here is some background" and "this will be refused" was the
+   text itself. Same warning red as .wpmtm-locked-banner, since both are
+   telling a TD a write is currently refused. */
+.wpmtm-td-note-banner.wpmtm-round-blocked {
+	background: #fcf0f1;
+	border-left-color: #d63638;
+}
+
+/* "Last saved ..." cue under the round-entry Save button, matching the ETECF
+   registration form's .etecf-last-saved treatment (small, muted, a little air
+   above it) so the two plugins' save cues read the same. */
+.wpmtm-last-saved {
+	margin-top: 0.75em;
 	color: #666;
-	border-left: 3px solid #cfcfcf;
 }
 
 /* Change 5: Print button, styled to match wp-etr's .etr-toolbar / .etr-btn
@@ -626,6 +783,7 @@ body[data-etr-active-tab="standings"] .tribe-events-nav-pagination,
 body[data-etr-active-tab="standings"] .tribe-events-c-subscribe-dropdown__container,
 body[data-etr-active-tab="standings"] .event-tickets,
 body[data-etr-active-tab="standings"] .tribe-tickets__tickets-wrapper,
+body[data-etr-active-tab="standings"] .tribe-link-view-attendee,
 body[data-etr-active-tab="standings"] .tribe-events-event-meta,
 body[data-etr-active-tab="standings"] .tribe-events-meta-group-details,
 body[data-etr-active-tab="standings"] .tribe-events-meta-group-venue,
@@ -635,6 +793,7 @@ body[data-etr-active-tab="pairings"] .tribe-events-nav-pagination,
 body[data-etr-active-tab="pairings"] .tribe-events-c-subscribe-dropdown__container,
 body[data-etr-active-tab="pairings"] .event-tickets,
 body[data-etr-active-tab="pairings"] .tribe-tickets__tickets-wrapper,
+body[data-etr-active-tab="pairings"] .tribe-link-view-attendee,
 body[data-etr-active-tab="pairings"] .tribe-events-event-meta,
 body[data-etr-active-tab="pairings"] .tribe-events-meta-group-details,
 body[data-etr-active-tab="pairings"] .tribe-events-meta-group-venue,
@@ -644,6 +803,7 @@ body[data-etr-active-tab="wall-chart"] .tribe-events-nav-pagination,
 body[data-etr-active-tab="wall-chart"] .tribe-events-c-subscribe-dropdown__container,
 body[data-etr-active-tab="wall-chart"] .event-tickets,
 body[data-etr-active-tab="wall-chart"] .tribe-tickets__tickets-wrapper,
+body[data-etr-active-tab="wall-chart"] .tribe-link-view-attendee,
 body[data-etr-active-tab="wall-chart"] .tribe-events-event-meta,
 body[data-etr-active-tab="wall-chart"] .tribe-events-meta-group-details,
 body[data-etr-active-tab="wall-chart"] .tribe-events-meta-group-venue,
@@ -653,6 +813,7 @@ body[data-etr-active-tab="round-entry"] .tribe-events-nav-pagination,
 body[data-etr-active-tab="round-entry"] .tribe-events-c-subscribe-dropdown__container,
 body[data-etr-active-tab="round-entry"] .event-tickets,
 body[data-etr-active-tab="round-entry"] .tribe-tickets__tickets-wrapper,
+body[data-etr-active-tab="round-entry"] .tribe-link-view-attendee,
 body[data-etr-active-tab="round-entry"] .tribe-events-event-meta,
 body[data-etr-active-tab="round-entry"] .tribe-events-meta-group-details,
 body[data-etr-active-tab="round-entry"] .tribe-events-meta-group-venue,

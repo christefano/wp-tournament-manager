@@ -194,10 +194,56 @@
 		hint.hidden = RR_TYPES.indexOf( select.value ) === -1;
 	}
 
+	// Quad rounds have a fixed, player-count-free answer (3 per cycle), so the
+	// editor can fill Rounds the instant a TD picks Quad or switches between
+	// Single and Double, instead of waiting for a save. A quad's count is not a
+	// free choice the way a Swiss or Round Robin count is, so selecting Quad (or
+	// switching cycles) always overwrites the field - there is no typed value to
+	// preserve for a format with exactly one correct answer. Round Robin needs
+	// the roster size, which the browser does not have for a not-yet-saved
+	// section, so that case is left to the server-side auto-fill on save.
+	function autoFillQuadRounds( row ) {
+		if ( ! row || ! row.querySelector ) {
+			return;
+		}
+		var typeSel   = row.querySelector( '[data-wpmtm-trn-type]' );
+		var cyclesSel = row.querySelector( '[data-wpmtm-cycles]' );
+		var rounds    = row.querySelector( 'input[name$="[tot_rnds]"]' );
+		if ( ! typeSel || ! rounds || 'Q' !== typeSel.value ) {
+			return;
+		}
+		var cycles = cyclesSel && '2' === cyclesSel.value ? 2 : 1;
+		rounds.value = String( 3 * cycles ); // mirrors WPMTM_Pairing_Aid::suggested_rounds( 'Q', *, cycles ).
+	}
+
+	// GP points only apply to a Grand Prix section, and the save handler stores
+	// 0 for any section with the box unchecked. Mirror that here so the field
+	// is visibly unavailable rather than silently ignored, and clear a stale
+	// value on the way so what the TD sees matches what will be stored.
+	function syncGrandPrixPoints( checkbox ) {
+		var row = checkbox && checkbox.closest ? checkbox.closest( 'tr' ) : null;
+		var pts = row ? row.querySelector( '[data-wpmtm-gp-pts]' ) : null;
+		if ( ! pts ) {
+			return;
+		}
+		pts.disabled = ! checkbox.checked;
+		if ( ! checkbox.checked ) {
+			pts.value = '';
+		}
+	}
+
 	document.addEventListener( 'change', function ( e ) {
-		var select = e.target;
-		if ( select && select.hasAttribute && select.hasAttribute( 'data-wpmtm-trn-type' ) ) {
-			syncRoundRobinHint( select );
+		var el = e.target;
+		if ( ! el || ! el.hasAttribute ) {
+			return;
+		}
+		if ( el.hasAttribute( 'data-wpmtm-trn-type' ) ) {
+			syncRoundRobinHint( el );
+			autoFillQuadRounds( el.closest ? el.closest( 'tr' ) : null );
+		} else if ( el.hasAttribute( 'data-wpmtm-cycles' ) ) {
+			autoFillQuadRounds( el.closest ? el.closest( 'tr' ) : null );
+		} else if ( el.hasAttribute( 'data-wpmtm-gr-prix' ) ) {
+			syncGrandPrixPoints( el );
 		}
 	} );
 
@@ -271,7 +317,37 @@
 		var field = document.getElementById( btn.getAttribute( 'data-target' ) || '' );
 		if ( field ) {
 			field.value = value;
+			// Setting .value programmatically does not fire 'input', so dispatch
+			// one - keeps the "Validate with USCF" stale guard below in sync.
+			field.dispatchEvent( new Event( 'input', { bubbles: true } ) );
 		}
+	} );
+
+	// #4 (2026-08-13): "Validate with USCF" checks the SAVED tournament, so once
+	// any field on the tournament edit form changes, its result would be stale.
+	// Disable the button and reveal the "unsaved changes" note on the first edit;
+	// saving reloads the page, re-enabling it. Only the form that actually
+	// contains the button (the tournament edit form) is affected.
+	function wpmtmMarkValidateStale( target ) {
+		var form = target && target.closest ? target.closest( 'form' ) : null;
+		if ( ! form ) {
+			return;
+		}
+		var btn = form.querySelector( '[data-wpmtm-validate-tds][data-context="tournament"]' );
+		if ( ! btn ) {
+			return;
+		}
+		btn.disabled = true;
+		var note = form.querySelector( '[data-wpmtm-validate-save-first]' );
+		if ( note ) {
+			note.hidden = false;
+		}
+	}
+	document.addEventListener( 'input', function ( e ) {
+		wpmtmMarkValidateStale( e.target );
+	} );
+	document.addEventListener( 'change', function ( e ) {
+		wpmtmMarkValidateStale( e.target );
 	} );
 
 	// Behavior 6: "Validate with USCF" (see the header comment above).
@@ -501,13 +577,13 @@
 			return;
 		}
 		if ( e.defaultPrevented ) {
-			return; // an earlier listener (e.g. data-wpmtm-confirm above) already cancelled this submit.
+			return; // an earlier listener (e.g. data-wpmtm-confirm above) already canceled this submit.
 		}
 		// This exact guard also lives in assets/wpmtm-frontend.js, and since
 		// 2026-07-21 BOTH files load together on an event page for a
 		// capability holder. Without this line the two copies fought over the
 		// same submit: the first set data-submitted, the second saw it already
-		// set and cancelled as a double submit, so a TD's "Save round" never
+		// set and canceled as a double submit, so a TD's "Save round" never
 		// posted at all (found in a real browser 2026-07-22). Marking the
 		// EVENT keeps genuine double-submit protection intact, since a real
 		// second submit is a different event object with no mark on it.

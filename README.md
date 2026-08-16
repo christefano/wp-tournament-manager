@@ -1,4 +1,4 @@
-# Tournament Manager
+# Tournament Managerw
 
 A free, truly open-source WordPress plugin for running club-level USCF chess tournaments end to end: setup guide, roster import, pairing aid, round-by-round result entry, standings with USCF tiebreaks, USCF DBF export for upload to [ratings.uschess.org](https://ratings.uschess.org), and optional CSV export of tournament results.
 

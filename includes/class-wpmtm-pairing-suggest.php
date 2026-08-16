@@ -12,6 +12,21 @@ if ( ! defined( 'ABSPATH' ) ) {
  * robin uses the standard Berger/circle schedule by pairing number.
  * The TD reviews and edits every suggestion before saving; nothing here
  * writes anything.
+ *
+ * Audit item 71: every 'notes' string this class builds (sprintf()/plain
+ * string, e.g. "Odd number of players: suggested bye for...") is hardcoded
+ * English, unlike the rest of this plugin's thoroughly wp_i18n'd UI copy.
+ * Deliberate, not an oversight: this class stays pure/WordPress-independent
+ * so tests/run-tests.php's zero-WP harness can load and test it directly
+ * (the same reason WPMTM_Round_Token, WPMTM_Round_Selector, and the other
+ * pure classes exist), and that harness defines only ABSPATH, no __()/
+ * esc_html__() shim. The plugin also ships no .po/.mo files of its own and
+ * never calls load_plugin_textdomain(), so this is theoretical today, not a
+ * live translation gap. If that changes, the fix is to return message codes
+ * plus arguments here and translate at the render site
+ * (trait-wpmtm-frontend-td-roundform.php's render_round_entry_form(), the
+ * sole consumer of $suggestion['notes']), not to import __() into this
+ * class.
  */
 class WPMTM_Pairing_Suggest {
 
@@ -40,13 +55,19 @@ class WPMTM_Pairing_Suggest {
 	 *                         advisory notes) so existing callers/tests
 	 *                         that never pass it keep behaving exactly as
 	 *                         before.
+	 * @param int    $cycles   How many times a round-robin-like section runs
+	 *                         its schedule (WPMTM_Pairing_Aid::MAX_CYCLES).
+	 *                         2 is a double round robin, or a double quad at
+	 *                         4 players: the same pairings repeat with the
+	 *                         colors reversed. Ignored for Swiss. Defaults
+	 *                         to 1, so existing callers are unaffected.
 	 * @return array array(
 	 *   'boards'        => list of array( 'white_player_id' => int, 'black_player_id' => int ),
 	 *   'bye_player_id' => int|null,
 	 *   'notes'         => string[],
 	 * )
 	 */
-	public static function suggest( array $players, array $games, array $byes, $round, $trn_type = 'S', $sec_name = '' ) {
+	public static function suggest( array $players, array $games, array $byes, $round, $trn_type = 'S', $sec_name = '', $cycles = 1 ) {
 		$round   = (int) $round;
 		$players = self::suppress_group_family_keys( $players );
 		$tally   = WPMTM_Scoring::tally( $players, $games, $byes );
@@ -68,7 +89,7 @@ class WPMTM_Pairing_Suggest {
 		}
 
 		$result = WPMTM_Pairing_Aid::is_round_robin_type( $trn_type )
-			? self::suggest_round_robin( $players, $active, $round )
+			? self::suggest_round_robin( $players, $active, $round, $cycles )
 			: self::suggest_swiss( $active, $tally );
 
 		// Change 5: purely advisory - appended after whichever branch above
@@ -86,36 +107,6 @@ class WPMTM_Pairing_Suggest {
 	// Family avoidance (docs/SPEC.md, 2026-07-14).
 	// -----------------------------------------------------------------
 
-	/**
-	 * Whether two players count as the same family for pairing-avoidance
-	 * purposes: best effort, not a guarantee.
-	 *
-	 * family_key is AUTHORITATIVE when both players have one (docs/SPEC.md,
-	 * "Decisions (2026-07-18, family key authoritative over last name)"):
-	 * both players' normalized family_key (parent email from ETECF import,
-	 * or a TD override typed into the roster editor - see WPMTM_Admin's
-	 * players editor) are non-empty, and the KEYS ALONE decide - equal keys
-	 * are family, different keys are NOT family, even when the two players
-	 * happen to share a last name. This lets a TD give two same-surname
-	 * players who are not actually related distinct family keys and have
-	 * that override honored, instead of the last-name rule wrongly keeping
-	 * them apart regardless.
-	 *
-	 * The last-name signal - the stored name is always uppercase LAST,FIRST
-	 * (docs/SPEC.md; never mutated), so the last name is the substring
-	 * before the first comma, trimmed, compared case-insensitively - is only
-	 * consulted as a FALLBACK, when at least one of the two players has no
-	 * family_key at all. It cannot be suppressed per pair in that fallback
-	 * case: two unrelated players who happen to share a surname, where one
-	 * or both have no family_key, are still treated as family; a TD who
-	 * needs to force such a pairing anyway just pairs it by hand, since
-	 * Suggest pairings only ever prefills the round-entry form
-	 * (WPMTM_Frontend_TD::render_suggest_link()'s docblock).
-	 *
-	 * @param array $a Player row with a 'name' and optional 'family_key'.
-	 * @param array $b Same shape.
-	 * @return bool
-	 */
 	/**
 	 * A family key shared by more than this many players in one section is
 	 * not a family - it is a group. See suppress_group_family_keys().
@@ -163,6 +154,46 @@ class WPMTM_Pairing_Suggest {
 		return $players;
 	}
 
+	/**
+	 * Whether two players count as the same family for pairing-avoidance
+	 * purposes: best effort, not a guarantee.
+	 *
+	 * family_key is AUTHORITATIVE when both players have one (docs/SPEC.md,
+	 * "Decisions (2026-07-18, family key authoritative over last name)"):
+	 * both players' normalized family_key (parent email from ETECF import,
+	 * or a TD override typed into the roster editor - see WPMTM_Admin's
+	 * players editor) are non-empty, and the KEYS ALONE decide - equal keys
+	 * are family, different keys are NOT family, even when the two players
+	 * happen to share a last name. This lets a TD give two same-surname
+	 * players who are not actually related distinct family keys and have
+	 * that override honored, instead of the last-name rule wrongly keeping
+	 * them apart regardless.
+	 *
+	 * The last-name signal - the stored name is always uppercase LAST,FIRST
+	 * (docs/SPEC.md; never mutated), so the last name is the substring
+	 * before the first comma, trimmed, compared case-insensitively - is only
+	 * consulted as a FALLBACK, when at least one of the two players has no
+	 * family_key at all. It cannot be suppressed per pair in that fallback
+	 * case: two unrelated players who happen to share a surname, where one
+	 * or both have no family_key, are still treated as family; a TD who
+	 * needs to force such a pairing anyway just pairs it by hand, since
+	 * Suggest pairings only ever prefills the round-entry form
+	 * (WPMTM_Frontend_TD::render_suggest_link()'s docblock).
+	 *
+	 * Corrected 2026-08-14 (audit item 66): this docblock - including the
+	 * SPEC-referenced "family key authoritative over last name" decision -
+	 * used to sit above the FAMILY_KEY_MAX_SHARE constant instead, orphaned
+	 * there when that constant was inserted between it and the method it
+	 * actually describes. Worth flagging specifically: a reader trusting
+	 * this codebase's own audit playbook ("read docblocks before flagging")
+	 * would have read the constant's docblock as documenting the constant,
+	 * missed the decision rationale entirely, and had no way to know it was
+	 * misplaced without reading the method body directly.
+	 *
+	 * @param array $a Player row with a 'name' and optional 'family_key'.
+	 * @param array $b Same shape.
+	 * @return bool
+	 */
 	public static function same_family( array $a, array $b ) {
 		$key_a = self::normalize_family_key( isset( $a['family_key'] ) ? $a['family_key'] : '' );
 		$key_b = self::normalize_family_key( isset( $b['family_key'] ) ? $b['family_key'] : '' );
@@ -549,8 +580,7 @@ class WPMTM_Pairing_Suggest {
 	 * whole section, then withdrawn/already-entered players drop out of
 	 * the emitted boards). Odd rosters get a ghost seat; whoever draws
 	 * the ghost is the bye suggestion.
-	 */
-	/**
+	 *
 	 * Family avoidance (docs/SPEC.md, 2026-07-14) deliberately does NOT
 	 * apply here: round robin and quad sections use a fixed Berger/circle
 	 * schedule by pair number, not a per-round pairing decision, so there
@@ -559,8 +589,9 @@ class WPMTM_Pairing_Suggest {
 	 * the schedule itself produces is just how round robin works (everyone
 	 * eventually plays everyone).
 	 */
-	protected static function suggest_round_robin( array $players, array $active, $round ) {
-		$notes = array();
+	protected static function suggest_round_robin( array $players, array $active, $round, $cycles = 1 ) {
+		$cycles = WPMTM_Pairing_Aid::normalize_cycles( $cycles );
+		$notes  = array();
 
 		$seats = $players;
 		usort(
@@ -586,7 +617,25 @@ class WPMTM_Pairing_Suggest {
 		}
 
 		$rounds_in_cycle = $n - 1;
-		$r               = ( ( (int) $round - 1 ) % $rounds_in_cycle );
+		$round_index     = (int) $round - 1;
+		$r               = $round_index % $rounds_in_cycle;
+
+		// Which pass through the schedule this round belongs to: 0 for the
+		// first cycle, 1 for the second. The circle rotation above already
+		// wraps on its own, so a double round robin repeats the same
+		// pairings; the only thing that has to change on the second pass is
+		// the colors, which are reversed so each pair meets once with each
+		// color. Guarded on $cycles so a single-cycle section that somehow
+		// runs past its scheduled rounds keeps its historic colors.
+		$cycle_index    = intdiv( $round_index, $rounds_in_cycle );
+		$reverse_colors = ( $cycles > 1 && 1 === ( $cycle_index % 2 ) );
+
+		if ( $reverse_colors ) {
+			$notes[] = sprintf(
+				'Second cycle: the round %d pairings repeat with colors reversed.',
+				$r + 1
+			);
+		}
 
 		// Circle method: fix the last seat, rotate the first n-1 seats by
 		// $r positions.
@@ -640,6 +689,9 @@ class WPMTM_Pairing_Suggest {
 			// convention gives the first-listed player White on even
 			// pair indexes and Black on odd ones, then flips each round.
 			$first_white = ( ( $i + $r ) % 2 ) === 0;
+			if ( $reverse_colors ) {
+				$first_white = ! $first_white;
+			}
 			$boards[]    = array(
 				'white_player_id' => (int) ( $first_white ? $x['id'] : $y['id'] ),
 				'black_player_id' => (int) ( $first_white ? $y['id'] : $x['id'] ),

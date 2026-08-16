@@ -292,6 +292,43 @@ class WPMTM_Admin_Export {
 	}
 
 	/**
+	 * Builds the "could not be created, fix these errors first" notice message
+	 * from a readiness report's findings, shared by the USCF and CSV export
+	 * handlers (which differ only in the intro sentence). Filters findings to
+	 * error level, shows the first five formatted, and appends a "+ N more"
+	 * tail. Returns '' when there are no error-level findings, so the caller
+	 * treats a blank return as "nothing blocks the download".
+	 *
+	 * @param array  $findings Readiness report findings (level/message/section/...).
+	 * @param string $intro    Already-translated lead sentence for this export type.
+	 * @return string The notice message, or '' when no error blocks the export.
+	 */
+	protected function build_export_error_message( array $findings, $intro ) {
+		$errors = array_values(
+			array_filter(
+				$findings,
+				function ( $finding ) {
+					return 'error' === $finding['level'];
+				}
+			)
+		);
+
+		if ( ! $errors ) {
+			return '';
+		}
+
+		$shown    = array_slice( $errors, 0, 5 );
+		$messages = array_map( array( $this, 'format_finding' ), $shown );
+		$message  = $intro . ' ' . implode( ' ', $messages );
+		$more     = count( $errors ) - count( $shown );
+		if ( $more > 0 ) {
+			/* translators: %d: number of additional errors not shown */
+			$message .= ' ' . sprintf( __( '+ %d more error(s).', 'wp-tournament-manager' ), $more );
+		}
+		return $message;
+	}
+
+	/**
 	 * Plain-language suggested action for a validator finding code (see
 	 * WPMTM_USCF_Validator, not modified here), rendered as a muted line
 	 * under each error/warning message in render_export_box() above. One
@@ -552,6 +589,9 @@ class WPMTM_Admin_Export {
 		if ( ! $tournament ) {
 			wp_die( esc_html__( 'Tournament not found.', 'wp-tournament-manager' ) );
 		}
+		if ( ! WPMTM_Roles::user_can_manage_tournament( $tournament ) ) {
+			wp_die( esc_html__( 'No permission to edit this tournament.', 'wp-tournament-manager' ) );
+		}
 
 		$redirect_back = add_query_arg( array( 'page' => 'wpmtm-edit', 'id' => $tournament_id ), admin_url( 'admin.php' ) );
 
@@ -562,7 +602,7 @@ class WPMTM_Admin_Export {
 		}
 
 		if ( ! class_exists( 'ZipArchive' ) ) {
-			$this->set_notice( 'error', __( 'The USCF export could not be created because this server\'s PHP does not have the php-zip extension enabled. Ask your host to enable php-zip, or export from a different server.', 'wp-tournament-manager' ) );
+			$this->set_notice( 'error', __( 'The USCF export could not be created because this server\'s PHP does not have the php-zip extension enabled. Ask the host to enable php-zip, or export from a different server.', 'wp-tournament-manager' ) );
 			wp_safe_redirect( $redirect_back );
 			exit;
 		}
@@ -573,25 +613,12 @@ class WPMTM_Admin_Export {
 		// player USCF checks re-fetch fresh rather than trusting a cache
 		// that can now be up to a day old (docs/SPEC.md, 2026-07-16).
 		$report = self::build_report( $tournament, true );
-		$errors = array_values(
-			array_filter(
-				$report['findings'],
-				function ( $finding ) {
-					return 'error' === $finding['level'];
-				}
-			)
+		$error_message = $this->build_export_error_message(
+			$report['findings'],
+			__( 'The USCF export could not be created. Fix these errors first:', 'wp-tournament-manager' )
 		);
-
-		if ( $errors ) {
-			$shown    = array_slice( $errors, 0, 5 );
-			$messages = array_map( array( $this, 'format_finding' ), $shown );
-			$message  = __( 'The USCF export could not be created. Fix these errors first:', 'wp-tournament-manager' ) . ' ' . implode( ' ', $messages );
-			$more     = count( $errors ) - count( $shown );
-			if ( $more > 0 ) {
-				/* translators: %d: number of additional errors not shown */
-				$message .= ' ' . sprintf( __( '+ %d more error(s).', 'wp-tournament-manager' ), $more );
-			}
-			$this->set_notice( 'error', $message );
+		if ( '' !== $error_message ) {
+			$this->set_notice( 'error', $error_message );
 			wp_safe_redirect( $redirect_back );
 			exit;
 		}
@@ -663,29 +690,19 @@ class WPMTM_Admin_Export {
 		if ( ! $tournament ) {
 			wp_die( esc_html__( 'Tournament not found.', 'wp-tournament-manager' ) );
 		}
+		if ( ! WPMTM_Roles::user_can_manage_tournament( $tournament ) ) {
+			wp_die( esc_html__( 'No permission to edit this tournament.', 'wp-tournament-manager' ) );
+		}
 
 		$redirect_back = add_query_arg( array( 'page' => 'wpmtm-edit', 'id' => $tournament_id ), admin_url( 'admin.php' ) );
 
 		$report = self::build_csv_report( $tournament );
-		$errors = array_values(
-			array_filter(
-				$report['findings'],
-				function ( $finding ) {
-					return 'error' === $finding['level'];
-				}
-			)
+		$error_message = $this->build_export_error_message(
+			$report['findings'],
+			__( 'The CSV export could not be created. Fix these errors first:', 'wp-tournament-manager' )
 		);
-
-		if ( $errors ) {
-			$shown    = array_slice( $errors, 0, 5 );
-			$messages = array_map( array( $this, 'format_finding' ), $shown );
-			$message  = __( 'The CSV export could not be created. Fix these errors first:', 'wp-tournament-manager' ) . ' ' . implode( ' ', $messages );
-			$more     = count( $errors ) - count( $shown );
-			if ( $more > 0 ) {
-				/* translators: %d: number of additional errors not shown */
-				$message .= ' ' . sprintf( __( '+ %d more error(s).', 'wp-tournament-manager' ), $more );
-			}
-			$this->set_notice( 'error', $message );
+		if ( '' !== $error_message ) {
+			$this->set_notice( 'error', $error_message );
 			wp_safe_redirect( $redirect_back );
 			exit;
 		}

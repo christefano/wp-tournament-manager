@@ -26,6 +26,21 @@ class WPMTM_Pairing_Aid {
 	const RR_TYPES = array( 'R', 'Q' );
 
 	/**
+	 * How many times a round-robin-like section may run its schedule
+	 * (docs/SPEC.md, "Decisions (2026-08-13, double round robin / double
+	 * quads via a cycles flag)"). One cycle is the historic behavior:
+	 * everyone plays everyone once. Two cycles is a double round robin,
+	 * and a 4-player double round robin is the "double quad" format: six
+	 * rounds, every pair meeting twice, once with each color.
+	 *
+	 * Two is the supported ceiling because that is what the section editor
+	 * offers and what the tests cover. The scheduling math below is not
+	 * limited to two, so raising this constant is the only change a triple
+	 * round robin would need.
+	 */
+	const MAX_CYCLES = 2;
+
+	/**
 	 * Whether a section `trn_type` value should use round-robin
 	 * (schedule-based) pairing behavior rather than Swiss (score-group)
 	 * behavior.
@@ -35,6 +50,23 @@ class WPMTM_Pairing_Aid {
 	 */
 	public static function is_round_robin_type( $trn_type ) {
 		return in_array( $trn_type, self::RR_TYPES, true );
+	}
+
+	/**
+	 * Coerces any stored or posted cycles value into the supported range.
+	 * Anything unusable (empty, zero, negative, non-numeric) falls back to
+	 * a single cycle, so a missing value can never silently double a
+	 * section's schedule.
+	 *
+	 * @param mixed $cycles Raw cycles value.
+	 * @return int 1..MAX_CYCLES.
+	 */
+	public static function normalize_cycles( $cycles ) {
+		$cycles = (int) $cycles;
+		if ( $cycles < 1 ) {
+			return 1;
+		}
+		return min( $cycles, self::MAX_CYCLES );
 	}
 
 	/**
@@ -48,17 +80,27 @@ class WPMTM_Pairing_Aid {
 	 * 4-player round robin by definition, and a partially-filled quad
 	 * still runs the same 3-round schedule.
 	 *
+	 * A section running two cycles doubles that count, so a double quad is
+	 * 6 rounds and a double round robin over 8 players is 14. A section
+	 * with too few players to schedule stays at 0 whatever the cycles
+	 * value, since doubling nothing is still nothing.
+	 *
 	 * Pure and WP-independent, unit-tested directly.
 	 *
 	 * @param string $trn_type     Section pairing type; only 'R' and 'Q'
 	 *                              are meaningful here (see RR_TYPES).
 	 * @param int    $player_count Current roster size for the section.
+	 * @param int    $cycles       How many times the schedule runs; see
+	 *                              MAX_CYCLES. Defaults to the historic
+	 *                              single cycle.
 	 * @return int Suggested total rounds; 0 for a Round Robin section
 	 *             with fewer than 2 players (nothing to schedule yet).
 	 */
-	public static function suggested_rounds( $trn_type, $player_count ) {
+	public static function suggested_rounds( $trn_type, $player_count, $cycles = 1 ) {
+		$cycles = self::normalize_cycles( $cycles );
+
 		if ( 'Q' === $trn_type ) {
-			return 3;
+			return 3 * $cycles;
 		}
 
 		$player_count = max( 0, (int) $player_count );
@@ -66,7 +108,9 @@ class WPMTM_Pairing_Aid {
 			return 0;
 		}
 
-		return ( 0 === $player_count % 2 ) ? $player_count - 1 : $player_count;
+		$single_cycle = ( 0 === $player_count % 2 ) ? $player_count - 1 : $player_count;
+
+		return $single_cycle * $cycles;
 	}
 
 	/**
@@ -106,7 +150,8 @@ class WPMTM_Pairing_Aid {
 	 *   'trn_type'  => 'S'|'R',
 	 * )
 	 */
-	public static function build( array $players, array $games, array $byes, $upcoming_round, $trn_type = 'S' ) {
+	public static function build( array $players, array $games, array $byes, $upcoming_round, $trn_type = 'S', $cycles = 1 ) {
+		$cycles         = self::normalize_cycles( $cycles );
 		$trn_type       = self::is_round_robin_type( $trn_type ) ? 'R' : 'S';
 		$tally          = WPMTM_Scoring::tally( $players, $games, $byes );
 		$upcoming_round = (int) $upcoming_round;
@@ -148,7 +193,7 @@ class WPMTM_Pairing_Aid {
 		}
 
 		$score_groups = ( 'R' === $trn_type )
-			? self::build_round_robin_group( $active_players, $tally, $pair_num_by_id )
+			? self::build_round_robin_group( $active_players, $tally, $pair_num_by_id, $cycles )
 			: self::build_score_groups( $active_players, $tally, $pair_num_by_id );
 
 		$unpaired = array();
@@ -224,11 +269,19 @@ class WPMTM_Pairing_Aid {
 	 * player, ordered by pairing number rather than score (a round robin
 	 * pairs by a fixed schedule, not by standings), with each row's
 	 * 'opponents_remaining' - the active players' pair_nums this player has
-	 * not yet faced - standing in for the Swiss 'color due' + 'opponents
-	 * played' pairing workflow: this is what the TD reads to see who still
-	 * needs to play whom.
+	 * not yet faced the required number of times - standing in for the
+	 * Swiss 'color due' + 'opponents played' pairing workflow: this is what
+	 * the TD reads to see who still needs to play whom.
+	 *
+	 * With $cycles = 2 (a double round robin, or a double quad) an opponent
+	 * stays on the remaining list until the pair has met twice, so the aid
+	 * keeps guiding the second cycle instead of going blank halfway through
+	 * the section. The reversed color for that second game comes from the
+	 * existing color_due indicator, which by then is asking for whichever
+	 * color the player did not have in the first meeting.
 	 */
-	protected static function build_round_robin_group( array $active_players, array $tally, array $pair_num_by_id ) {
+	protected static function build_round_robin_group( array $active_players, array $tally, array $pair_num_by_id, $cycles = 1 ) {
+		$cycles = self::normalize_cycles( $cycles );
 		if ( empty( $active_players ) ) {
 			return array();
 		}
@@ -252,10 +305,30 @@ class WPMTM_Pairing_Aid {
 			$id    = (int) $player['id'];
 			$entry = isset( $tally[ $id ] ) ? $tally[ $id ] : self::empty_tally_entry();
 
-			$opponents_played    = self::opponents_played_pair_nums( $entry['opponents'], $pair_num_by_id );
-			$opponents_remaining = array_values(
-				array_diff( $active_pair_nums, $opponents_played, array( $player['pair_num'] ) )
-			);
+			$opponents_played = self::opponents_played_pair_nums( $entry['opponents'], $pair_num_by_id );
+
+			// Count meetings per opponent rather than treating "played" as a
+			// set, so a second cycle can tell "met once, owed one more" apart
+			// from "met twice, done". At $cycles = 1 this reduces to the
+			// original set difference exactly. Keys are cast to string so a
+			// pair_num arriving as '3' from the database and as 3 from a test
+			// fixture count as the same opponent.
+			$times_played = array();
+			foreach ( $opponents_played as $opponent_pair_num ) {
+				$key                  = (string) $opponent_pair_num;
+				$times_played[ $key ] = isset( $times_played[ $key ] ) ? $times_played[ $key ] + 1 : 1;
+			}
+
+			$opponents_remaining = array();
+			foreach ( $active_pair_nums as $candidate ) {
+				if ( (string) $candidate === (string) $player['pair_num'] ) {
+					continue; // nobody plays themselves.
+				}
+				$played = isset( $times_played[ (string) $candidate ] ) ? $times_played[ (string) $candidate ] : 0;
+				if ( $played < $cycles ) {
+					$opponents_remaining[] = $candidate;
+				}
+			}
 			sort( $opponents_remaining, SORT_NUMERIC );
 
 			$players_out[] = array(

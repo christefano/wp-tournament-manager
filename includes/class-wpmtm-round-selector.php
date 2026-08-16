@@ -183,4 +183,96 @@ class WPMTM_Round_Selector {
 	public static function withdraw_offered( $selected_round, $tot_rnds ) {
 		return (int) $selected_round < (int) $tot_rnds;
 	}
+
+	/**
+	 * Whether a section has every planned round entered: it has a round count
+	 * set at all, and at least that many distinct rounds already carry a game
+	 * or a bye.
+	 *
+	 * A tot_rnds of 0 is deliberately NOT complete. A Swiss section imports
+	 * with tot_rnds 0 until the TD sets a round count, and treating that as
+	 * "done" used to send the setup guide straight to its export step for a
+	 * tournament that still needed pairing (docs/SPEC.md, 2026-07-17).
+	 *
+	 * Audit item 54: this one rule was derived independently in three places -
+	 * WPMTM_Frontend_Public::rated_and_complete(), the $section_complete local
+	 * in render_section_standings(), and the 'sections_complete' loop in
+	 * WPMTM_Wizard::build_state() - each with its own copy of the tot_rnds < 1
+	 * caveat above. It lives here now: this class is the pure, WordPress-free
+	 * home for exactly this kind of round arithmetic, so it is unit-tested
+	 * directly by tests/run-tests.php rather than only through whichever
+	 * renderer happened to embed it.
+	 *
+	 * @param int   $tot_rnds     The section's planned round count.
+	 * @param int[] $rounds_done  Distinct round numbers with a result recorded
+	 *                            (WPMTM_Repository::rounds_with_results()).
+	 * @return bool
+	 */
+	public static function section_complete( $tot_rnds, array $rounds_done ) {
+		$tot_rnds = (int) $tot_rnds;
+		if ( $tot_rnds < 1 ) {
+			return false;
+		}
+		return count( $rounds_done ) >= $tot_rnds;
+	}
+
+	/**
+	 * The lowest round before $round that is not fully scored yet, or 0 when
+	 * every earlier round is done.
+	 *
+	 * Rounds are played in order, so entering results for round 5 while round
+	 * 3 is still blank means either the TD is on the wrong round or round 3
+	 * was never finished. Both are worth stopping, and for a Swiss section it
+	 * is worse than untidy: Swiss pairings for a round are computed from the
+	 * standings the previous round produced, so a gap means the later round
+	 * was paired against scores that do not exist yet.
+	 *
+	 * Editing an EARLIER round is always fine and this never blocks it - the
+	 * check only looks at rounds strictly before the one being written, so
+	 * going back to fix round 3 is unaffected by round 5 being empty.
+	 *
+	 * @param int   $round        Round about to be written, 1-based.
+	 * @param int[] $rounds_scored Rounds that are fully scored
+	 *                             (WPMTM_Repository::rounds_fully_scored()).
+	 * @return int The first unscored earlier round, or 0 if there is none.
+	 */
+	public static function first_unscored_before( $round, array $rounds_scored ) {
+		$round = (int) $round;
+		if ( $round < 2 ) {
+			return 0;
+		}
+		$scored = array();
+		foreach ( $rounds_scored as $r ) {
+			$scored[ (int) $r ] = true;
+		}
+		for ( $r = 1; $r < $round; $r++ ) {
+			if ( ! isset( $scored[ $r ] ) ) {
+				return $r;
+			}
+		}
+		return 0;
+	}
+
+	/**
+	 * Whether a round may be PAIRED yet, which is a different question from
+	 * whether it may be scored.
+	 *
+	 * A Round Robin or Quad schedule is fixed before round 1: who plays whom
+	 * in round 5 comes from pairing numbers, not from results, so those
+	 * sections may be paired as far ahead as the TD likes. A Swiss round is
+	 * drawn from the current standings, so pairing round 5 before round 4 has
+	 * been scored produces a draw built on incomplete scores. The asymmetry is
+	 * the format's, not this plugin's.
+	 *
+	 * @param string $trn_type      Section pairing type.
+	 * @param int    $round         Round about to be paired.
+	 * @param int[]  $rounds_scored Fully scored rounds.
+	 * @return bool
+	 */
+	public static function can_pair_round( $trn_type, $round, array $rounds_scored ) {
+		if ( WPMTM_Pairing_Aid::is_round_robin_type( $trn_type ) ) {
+			return true;
+		}
+		return 0 === self::first_unscored_before( $round, $rounds_scored );
+	}
 }

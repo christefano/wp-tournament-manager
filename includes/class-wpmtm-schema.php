@@ -24,6 +24,24 @@ if ( ! defined( 'ABSPATH' ) ) {
  * override: WPMTM_Admin_Sections::handle_save_sections() only re-suggests when
  * the posted tot_rnds is empty (0) or still equals this stored hint.
  *
+ * wpmtm_sections.cycles (added 0.1.15, docs/SPEC.md, "Decisions (2026-08-13,
+ * double round robin / double quads via a cycles flag)"): how many times a
+ * Round Robin / Quad section runs its schedule. 1 is the historic single
+ * cycle and the default for every existing row, so the upgrade is a no-op for
+ * current sections. 2 is a double round robin, and a 4-player double round
+ * robin is the "double quad": six rounds, every pair meeting twice, once with
+ * each color. Ignored for Swiss sections. The ceiling lives in
+ * WPMTM_Pairing_Aid::MAX_CYCLES, which also normalizes the stored value.
+ *
+ * wpmtm_games.saved_at (added 0.1.16, docs/SPEC.md, "Decisions (2026-08-13,
+ * last-saved cue on the round-entry form)"): the time a round's boards were
+ * last written. WPMTM_Repository::replace_round() stamps every row it inserts
+ * with current_time('mysql'), and the round-entry form reads MAX(saved_at) for
+ * the round to show a "Last saved ..." line under the Save button, matching the
+ * ETECF registration form's cue. NULL on rows from before the upgrade, and
+ * absent entirely for a byes-only round (which writes no game row), where no
+ * cue is shown.
+ *
  * wpmtm_players.rating_source / rating_checked (added 0.1.10, docs/SPEC.md,
  * "Decisions (2026-07-17, rating provenance)"): mirrors the attendee-level
  * _wpmtm_rating_source / _wpmtm_rating_checked meta WPMTM_Registration_Check
@@ -82,7 +100,7 @@ class WPMTM_Schema {
 	 * Bump whenever the CREATE TABLE statements below change; maybe_upgrade()
 	 * re-runs dbDelta when the stored option differs from this value.
 	 */
-	const DB_VERSION = '0.1.13';
+	const DB_VERSION = '0.1.16';
 
 	/** Allowed wpmtm_games.result values. */
 	const GAME_RESULTS = array( 'W', 'B', 'D', 'FW', 'FB', 'FD' );
@@ -170,6 +188,7 @@ class WPMTM_Schema {
 			trn_type char(1) NOT NULL DEFAULT 'S',
 			tot_rnds smallint(5) unsigned NOT NULL DEFAULT 0,
 			auto_rounds_hint smallint(5) unsigned DEFAULT NULL,
+			cycles tinyint(3) unsigned NOT NULL DEFAULT 1,
 			sch_lvl char(1) DEFAULT NULL,
 			gr_prix char(1) NOT NULL DEFAULT 'N',
 			gp_pts smallint(5) unsigned NOT NULL DEFAULT 0,
@@ -195,9 +214,11 @@ class WPMTM_Schema {
 			rating_source varchar(20) DEFAULT NULL,
 			rating_checked int(10) unsigned DEFAULT NULL,
 			notes text NULL,
+			attendee_id bigint(20) unsigned DEFAULT NULL,
 			PRIMARY KEY  (id),
 			UNIQUE KEY section_pair (section_id,pair_num),
-			KEY section_id (section_id)
+			KEY section_id (section_id),
+			KEY attendee_id (attendee_id)
 		) {$charset_collate};";
 
 		$sql[] = "CREATE TABLE {$games} (
@@ -208,6 +229,7 @@ class WPMTM_Schema {
 			white_player_id bigint(20) unsigned NOT NULL,
 			black_player_id bigint(20) unsigned NOT NULL,
 			result varchar(2) NOT NULL DEFAULT '',
+			saved_at datetime DEFAULT NULL,
 			PRIMARY KEY  (id),
 			UNIQUE KEY section_round_board (section_id,round,board),
 			KEY section_round (section_id,round),

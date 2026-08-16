@@ -253,6 +253,62 @@ class WPMTM_USCF_Export {
 		return str_pad( (string) $round, WPMTM_Round_Token::WIDTH, ' ', STR_PAD_RIGHT );
 	}
 
+	/**
+	 * Cuts a UTF-8 string to at most $max_bytes bytes without splitting a
+	 * multi-byte character (audit item 64). Self-contained rather than
+	 * mb_strcut() - see build_detail_bytes()'s own note on why: this plugin
+	 * already relies on WordPress's mbstring compat shim, which covers
+	 * mb_substr()/mb_strlen() but not mb_strcut(), so calling it directly
+	 * would add a real dependency on ext-mbstring where none exists today.
+	 *
+	 * Cuts at the byte budget like plain substr(), then walks back over any
+	 * trailing UTF-8 continuation bytes (10xxxxxx) to find the start of the
+	 * character straddling the cut, and drops that whole character if its
+	 * declared length (from its leading byte) does not fit in what remains.
+	 * A leading byte with no continuation bytes at all needs no special
+	 * handling; this only ever removes an incomplete trailing sequence.
+	 *
+	 * @param string $value
+	 * @param int    $max_bytes
+	 * @return string At most $max_bytes bytes, always valid UTF-8.
+	 */
+	protected static function truncate_utf8_bytes( $value, $max_bytes ) {
+		$value = (string) $value;
+		if ( strlen( $value ) <= $max_bytes ) {
+			return $value;
+		}
+
+		$cut = substr( $value, 0, $max_bytes );
+		$len = strlen( $cut );
+		$i   = $len - 1;
+
+		// Walk back over continuation bytes (10xxxxxx, i.e. top two bits 10)
+		// to the lead byte of whichever character the cut landed inside.
+		while ( $i >= 0 && ( ord( $cut[ $i ] ) & 0xC0 ) === 0x80 ) {
+			--$i;
+		}
+		if ( $i < 0 ) {
+			return ''; // Degenerate: nothing but continuation bytes.
+		}
+
+		$lead = ord( $cut[ $i ] );
+		if ( ( $lead & 0x80 ) === 0x00 ) {
+			$seq_len = 1; // ASCII.
+		} elseif ( ( $lead & 0xE0 ) === 0xC0 ) {
+			$seq_len = 2;
+		} elseif ( ( $lead & 0xF0 ) === 0xE0 ) {
+			$seq_len = 3;
+		} elseif ( ( $lead & 0xF8 ) === 0xF0 ) {
+			$seq_len = 4;
+		} else {
+			$seq_len = 1; // Not a valid UTF-8 lead byte; treat as standalone.
+		}
+
+		// The character starting at $i needs $seq_len bytes; if the cut
+		// ended before that, the character is incomplete and must go too.
+		return ( $i + $seq_len > $len ) ? substr( $cut, 0, $i ) : $cut;
+	}
+
 	public function build_detail_bytes() {
 		$round_cols = $this->round_column_count();
 		$fields     = $this->detail_fields( $round_cols );
@@ -263,8 +319,25 @@ class WPMTM_USCF_Export {
 				$name = isset( $p['name'] ) ? $p['name'] : '';
 				// D_NAME hard-truncates at 30 per spec - other fields
 				// reject on overlength instead (see WPMTM_DBF_Writer).
+				//
+				// Audit item 64: a plain substr() cut at a byte boundary can
+				// split a multi-byte UTF-8 character in half and write a
+				// broken sequence into the file US Chess receives - reachable
+				// with an ordinary accented name over 30 bytes. mb_substr()
+				// is the wrong fix here (unlike the mb_substr() calls in
+				// WPMTM_Admin - those cap a CHARACTER count against a varchar
+				// column width): DBF is a byte-oriented binary format and
+				// NAME_MAX_LEN is a byte budget, so mb_substr() could return
+				// MORE than 30 bytes and trip WPMTM_DBF_Writer's own length
+				// check. truncate_utf8_bytes() below cuts at the byte budget
+				// like substr() but backs off to the last complete character,
+				// with no dependency on mbstring (mb_strcut() would do this
+				// directly, but WordPress only ships a compat shim for
+				// mb_substr()/mb_strlen(), not mb_strcut() - see
+				// WPMTM_Admin::handle_save_tournament()'s own note on why that
+				// shim matters here).
 				if ( strlen( $name ) > self::NAME_MAX_LEN ) {
-					$name = substr( $name, 0, self::NAME_MAX_LEN );
+					$name = self::truncate_utf8_bytes( $name, self::NAME_MAX_LEN );
 				}
 
 				$tokens = array();

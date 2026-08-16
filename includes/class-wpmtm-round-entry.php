@@ -39,15 +39,28 @@ class WPMTM_Round_Entry {
 	 *                       than $round is an error: that player played
 	 *                       through their withdrawal round and is out from
 	 *                       the following round onward.
+	 * @param bool  $allow_blank_results Whether a board may carry an empty
+	 *                       result. False (default) is the historic
+	 *                       results-entry rule: every board must name a
+	 *                       played outcome. True is the "Save pairings" path
+	 *                       (docs/SPEC.md, "Decisions (2026-08-14, saving
+	 *                       pairings before results)"), where a TD is
+	 *                       recording who plays whom before any game has
+	 *                       been played, so a blank result is the normal
+	 *                       case rather than an omission. Every other rule -
+	 *                       roster membership, no player twice in a round,
+	 *                       withdrawal checks - still applies unchanged.
 	 * @return array array( 'ok' => bool, 'errors' => string[] ).
 	 */
-	public static function validate_round( array $players, array $boards, array $byes, $round = 0 ) {
+	public static function validate_round( array $players, array $boards, array $byes, $round = 0, $allow_blank_results = false ) {
 		$errors = array();
 
 		if ( empty( $boards ) && empty( $byes ) ) {
 			return array(
 				'ok'     => false,
-				'errors' => array( 'This round has no boards and no byes. Enter at least one result or bye before saving.' ),
+				'errors' => $allow_blank_results
+					? array( 'This round has no boards and no byes. Add at least one pairing or bye before saving.' )
+					: array( 'This round has no boards and no byes. Enter at least one result or bye before saving.' ),
 			);
 		}
 
@@ -115,8 +128,13 @@ class WPMTM_Round_Entry {
 			}
 
 			$result = isset( $board['result'] ) ? strtoupper( trim( (string) $board['result'] ) ) : '';
+			if ( $allow_blank_results && '' === $result ) {
+				continue; // pairing recorded, result still to come.
+			}
 			if ( ! in_array( $result, self::GAME_RESULTS, true ) ) {
-				$errors[] = "$row_label: result must be one of W, B, D, FW, FB, FD.";
+				$errors[] = $allow_blank_results
+					? "$row_label: result must be blank, or one of W, B, D, FW, FB, FD."
+					: "$row_label: result must be one of W, B, D, FW, FB, FD.";
 			}
 		}
 
@@ -143,6 +161,119 @@ class WPMTM_Round_Entry {
 			'ok'     => empty( $errors ),
 			'errors' => $errors,
 		);
+	}
+
+	/**
+	 * Sanitizes and filters the read-only "carried" byes posted alongside a
+	 * round (item 35, docs/SPEC.md): byes held by players withdrawn as of
+	 * before the round, preserved verbatim on resave. Kept out of
+	 * validate_round() on purpose - that method correctly rejects a bye for a
+	 * withdrawn player, but a carried bye is existing history being kept, not a
+	 * new pairing, so it is allowed here and merged into the written byes only
+	 * after the editable set has validated.
+	 *
+	 * Drops any entry whose type is not a real bye (B/H/U), whose player is not
+	 * on the roster, who is already on a board this round, who already has an
+	 * editable bye this round, or who is a duplicate. In every collision the
+	 * editable data the TD actively entered wins.
+	 *
+	 * Pure (no WP functions) so the zero-dependency test runner can exercise
+	 * it: callers wp_unslash() the raw POST array before handing it in.
+	 *
+	 * @param array $posted_carried    player_id => raw bye type, from the form.
+	 * @param array $known_player_ids  [ id => true ] roster membership.
+	 * @param array $boards_player_ids flat list of player ids on a board this round.
+	 * @param array $editable_bye_ids  [ id => true ] players with an editable bye.
+	 * @return array list of [ 'player_id' => int, 'type' => string ] for replace_round().
+	 */
+	public static function filter_carried_byes( array $posted_carried, array $known_player_ids, array $boards_player_ids, array $editable_bye_ids ) {
+		$carried = array();
+		$seen    = array();
+
+		foreach ( $posted_carried as $player_id => $type ) {
+			$player_id = (int) $player_id;
+			$type      = strtoupper( trim( (string) $type ) );
+
+			if ( ! in_array( $type, self::BYE_TYPES, true ) ) {
+				continue;
+			}
+
+			if ( $player_id <= 0
+				|| ! isset( $known_player_ids[ $player_id ] )
+				|| in_array( $player_id, $boards_player_ids, true )
+				|| isset( $editable_bye_ids[ $player_id ] )
+				|| isset( $seen[ $player_id ] ) ) {
+				continue;
+			}
+
+			$seen[ $player_id ] = true;
+			$carried[]          = array(
+				'player_id' => $player_id,
+				'type'      => $type,
+			);
+		}
+
+		return $carried;
+	}
+
+	/**
+	 * Sanitizes and filters the player ids posted as a withdrawal (the byes
+	 * area's 'WD' option, which is not a bye type - handle_save_round()
+	 * strips it out of the posted byes and turns it into
+	 * WPMTM_Repository::set_player_withdrawn() after the round itself
+	 * saves).
+	 *
+	 * Audit item 36: withdrawals used to be the ONE thing in a round save
+	 * that never got membership-checked. Boards and byes are checked by
+	 * validate_round() ($known_ids) and carried byes by
+	 * filter_carried_byes(), but 'WD' is stripped before validation runs and
+	 * was then applied straight to set_player_withdrawn(), whose SQL is
+	 * `WHERE id = %d` with no section scope - so a crafted POST naming any
+	 * player id in the database withdrew that player, in any tournament.
+	 * Everything posted here is filtered against this section's roster
+	 * before it can reach a write.
+	 *
+	 * Also enforces the withdraw-offered rule server-side. The byes area
+	 * only renders the Withdraw option when a later round still exists to be
+	 * dropped from (WPMTM_Round_Selector::withdraw_offered()); a render-time
+	 * gate is not authorization, so the caller passes the same answer in and
+	 * a withdrawal posted for the final round is dropped rather than
+	 * recorded as a meaningless "out from after the last round".
+	 *
+	 * Pure (no WP functions) so the zero-dependency test runner can exercise
+	 * it: callers wp_unslash()/sanitize the raw POST values before handing
+	 * them in, the same contract filter_carried_byes() has.
+	 *
+	 * @param array $posted_ids       Candidate player ids (the raw keys of the
+	 *                                posted byes array whose value was 'WD').
+	 * @param array $known_player_ids [ id => true ] roster membership.
+	 * @param bool  $withdraw_allowed WPMTM_Round_Selector::withdraw_offered()'s
+	 *                                answer for the round being saved. False
+	 *                                drops every withdrawal.
+	 * @return int[] Unique, roster-checked player ids, in posted order.
+	 */
+	public static function filter_withdrawals( array $posted_ids, array $known_player_ids, $withdraw_allowed = true ) {
+		if ( ! $withdraw_allowed ) {
+			return array();
+		}
+
+		$withdrawals = array();
+		$seen        = array();
+
+		foreach ( $posted_ids as $player_id ) {
+			$player_id = (int) $player_id;
+
+			if ( $player_id <= 0
+				|| ! isset( $known_player_ids[ $player_id ] )
+				|| isset( $seen[ $player_id ] ) ) {
+				continue;
+			}
+
+			$seen[ $player_id ] = true;
+			$withdrawals[]      = $player_id;
+		}
+
+		return $withdrawals;
 	}
 
 	/**

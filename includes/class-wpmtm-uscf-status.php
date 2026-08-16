@@ -50,6 +50,61 @@ class WPMTM_USCF_Status {
 	 */
 	const WARN_WINDOW_DAYS = 30;
 
+	/** Per-request outbound HTTP timeout, in seconds, for one API call. */
+	const REQUEST_TIMEOUT = 10;
+
+	/**
+	 * Shorter timeout for the one path that runs inside somebody else's
+	 * transaction: WPMTM_Registration_Check's membership/rating check fires
+	 * during Tickets Commerce checkout (audit item 50). A cache miss there
+	 * puts this request on the buyer's critical path, and the check is
+	 * advisory - a miss degrades to "could not confirm", which is a warning
+	 * the registrant sees either way. Three seconds is the most a purchase
+	 * should ever wait on an API that USCF does not officially support.
+	 */
+	const CHECKOUT_TIMEOUT = 3;
+
+	/**
+	 * Wall-clock budget, in seconds, for all forced (cache-bypassing) lookups
+	 * in a single request (audit item 49).
+	 *
+	 * ajax_validate_players() and the DBF export gate both pass $force = true
+	 * for every player, deliberately: with a 1-day cache, a stale answer would
+	 * strand a TD who just fixed a membership at USCF. But those calls are
+	 * serial, one HTTP round trip per registrant at REQUEST_TIMEOUT each, with
+	 * nothing capping the total - so a large enough event ran past PHP's
+	 * max_execution_time and returned NOTHING, which is strictly worse than a
+	 * partial answer.
+	 *
+	 * Past this budget, force stops meaning "always refetch" and starts
+	 * meaning "use the cache if it has anything, otherwise report not
+	 * checked". Every caller already handles both: a cache hit is a real
+	 * verdict, and a miss becomes the same NOT_CACHED / "not checked yet"
+	 * UNKNOWN row those callers render for a cache-only miss today. The TD
+	 * sees which players were checked and which were not, instead of a blank
+	 * screen or a fatal.
+	 *
+	 * 20 seconds against a default 30-second max_execution_time leaves room
+	 * for the render that follows.
+	 */
+	const FORCED_FETCH_BUDGET = 20;
+
+	/** Cumulative seconds spent on forced outbound lookups this request. */
+	private $forced_fetch_seconds = 0.0;
+
+	/** True once the budget above has been spent; see forced_budget_spent(). */
+	private $forced_budget_exhausted = false;
+
+	/**
+	 * Whether this request has already spent its forced-lookup budget, i.e.
+	 * whether any "not checked yet" rows in the current batch are down to the
+	 * budget rather than to a genuinely cold cache. Callers use it to explain
+	 * the difference to the TD.
+	 */
+	public function forced_budget_spent() {
+		return $this->forced_budget_exhausted;
+	}
+
 	private static $instance = null;
 
 	public static function instance() {
@@ -527,10 +582,14 @@ class WPMTM_USCF_Status {
 	 *                             unsupported MUIR API. Mutually exclusive
 	 *                             with $force in practice (a forced caller
 	 *                             wants a fresh answer, not a cache-only one).
+	 * @param int    $timeout     Outbound HTTP timeout in seconds. Defaults to
+	 *                             REQUEST_TIMEOUT; only the checkout-time
+	 *                             registration check overrides it, with the
+	 *                             shorter CHECKOUT_TIMEOUT (audit item 50).
 	 * @return array|string|null
 	 */
-	public function get_member( $id, $force = false, $cache_only = false ) {
-		return $this->fetch( '/members/' . rawurlencode( $id ), 'wpmtm_uscf_member_' . $id, $force, $cache_only );
+	public function get_member( $id, $force = false, $cache_only = false, $timeout = self::REQUEST_TIMEOUT ) {
+		return $this->fetch( '/members/' . rawurlencode( $id ), 'wpmtm_uscf_member_' . $id, $force, $cache_only, $timeout );
 	}
 
 	/**
@@ -545,7 +604,18 @@ class WPMTM_USCF_Status {
 		return $this->fetch( '/affiliates/' . rawurlencode( $id ), 'wpmtm_uscf_affiliate_' . $id, $force, $cache_only );
 	}
 
-	protected function fetch( $path, $cache_key, $force = false, $cache_only = false ) {
+	protected function fetch( $path, $cache_key, $force = false, $cache_only = false, $timeout = self::REQUEST_TIMEOUT ) {
+		// Audit item 49: once this request has spent its forced-lookup budget,
+		// a forced call degrades to a cache-only one rather than adding another
+		// serial round trip. A cached answer is still returned; a miss falls
+		// through to the NOT_CACHED path below, which every caller already
+		// renders as "not checked yet".
+		if ( $force && $this->forced_fetch_seconds >= self::FORCED_FETCH_BUDGET ) {
+			$this->forced_budget_exhausted = true;
+			$force      = false;
+			$cache_only = true;
+		}
+
 		if ( ! $force ) {
 			$cached = get_transient( $cache_key );
 			if ( is_array( $cached ) && array_key_exists( 'found', $cached ) ) {
@@ -561,13 +631,17 @@ class WPMTM_USCF_Status {
 			return self::NOT_CACHED;
 		}
 
+		$started  = microtime( true );
 		$response = wp_remote_get(
 			self::API_BASE . $path,
 			array(
-				'timeout' => 10,
+				'timeout' => (int) $timeout,
 				'headers' => array( 'Accept' => 'application/json' ),
 			)
 		);
+		if ( $force ) {
+			$this->forced_fetch_seconds += microtime( true ) - $started;
+		}
 
 		if ( is_wp_error( $response ) ) {
 			return null;
@@ -813,6 +887,7 @@ class WPMTM_USCF_Status {
 					'summaryMixed'   => __( '%1$s of %2$s players valid - %3$s problems.', 'wp-tournament-manager' ),
 					/* translators: %s: number of players that could not be checked */
 					'summaryUnknown' => __( '%s could not be checked.', 'wp-tournament-manager' ),
+					'summaryBudget'  => __( 'Checking stopped early to stay within this request\'s time limit. Click Validate players again to continue with the rest - the players already checked are cached, so the next pass starts where this one stopped.', 'wp-tournament-manager' ),
 				),
 			)
 		);
@@ -845,8 +920,11 @@ class WPMTM_USCF_Status {
 			wp_send_json_error( array( 'message' => __( 'Security check failed. Reload the page and try again.', 'wp-tournament-manager' ) ), 403 );
 		}
 		$tournament = WPMTM_Repository::get_tournament_by_event( $event_id );
-		if ( ! $tournament || ! WPMTM_Roles::user_can_manage_tournament( $tournament ) ) {
-			wp_send_json_error( array( 'message' => __( 'You do not have permission to validate players for this event.', 'wp-tournament-manager' ) ), 403 );
+		if ( ! $tournament ) {
+			wp_send_json_error( array( 'message' => __( 'No tournament is linked to this event yet. Create or import a tournament first, then validate its players.', 'wp-tournament-manager' ) ), 400 );
+		}
+		if ( ! WPMTM_Roles::user_can_manage_tournament( $tournament ) ) {
+			wp_send_json_error( array( 'message' => __( 'No permission to validate players for this event. Signing in as an administrator or the tournament\'s creator is required. A stale cached page can also cause this message, so reload and try again.', 'wp-tournament-manager' ) ), 403 );
 		}
 		if ( ! class_exists( '\Etr\Plugin' ) ) {
 			wp_send_json_error( array( 'message' => __( 'Event Tickets Registrations (wp-etr) is not active.', 'wp-tournament-manager' ) ), 400 );
@@ -883,9 +961,16 @@ class WPMTM_USCF_Status {
 
 		wp_send_json_success(
 			array(
-				'through' => $through,
-				'rows'    => $rows,
-				'summary' => $this->summarize( $rows ),
+				'through'       => $through,
+				'rows'          => $rows,
+				'summary'       => $this->summarize( $rows ),
+				// Audit item 49: true when the per-request forced-lookup budget
+				// ran out partway through, so the "not checked" rows are this
+				// request giving up rather than a cold cache. The client says so
+				// and tells the TD that clicking again continues from where it
+				// stopped - the players already checked are cached now, so the
+				// second pass spends its whole budget on the remainder.
+				'budget_spent'  => $this->forced_budget_spent(),
 			)
 		);
 	}
@@ -934,7 +1019,7 @@ class WPMTM_USCF_Status {
 				wp_send_json_error( array( 'message' => __( 'Tournament not found.', 'wp-tournament-manager' ) ), 400 );
 			}
 			if ( ! WPMTM_Roles::user_can_manage_tournament( $tournament ) ) {
-				wp_send_json_error( array( 'message' => __( 'You do not have permission to validate TDs.', 'wp-tournament-manager' ) ), 403 );
+				wp_send_json_error( array( 'message' => __( 'No permission to validate TDs.', 'wp-tournament-manager' ) ), 403 );
 			}
 			// Tournament's own TD IDs ONLY - no Settings fallback (docs/
 			// SPEC.md, 2026-07-17, TD default removal). A blank field here
@@ -961,7 +1046,7 @@ class WPMTM_USCF_Status {
 			// must keep advancing even on a cache-hit re-check.
 			self::record_td_check( $tournament_id );
 		} elseif ( ! current_user_can( 'manage_options' ) ) {
-			wp_send_json_error( array( 'message' => __( 'You do not have permission to validate TDs.', 'wp-tournament-manager' ) ), 403 );
+			wp_send_json_error( array( 'message' => __( 'No permission to validate TDs.', 'wp-tournament-manager' ) ), 403 );
 		}
 
 		$rows = array();

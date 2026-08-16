@@ -1,5 +1,85 @@
 # Changelog
 
+## 1.5
+
+Double round robins and double quads, new **Pair rounds** and **Enter results** modes, several performance improvements, and quality of life enhancements for TDs.
+
+Updating from v1.4 .1 and earlier is recommended.
+
+As of v1.5, Tournament Manager is considered feature-complete, and new feature development has been paused. The focus now is on stability, bug fixes, security patches, and performance improvements. New feature development will pick up again with Tournament Manager v2.0.
+
+If you have a feature request for v2.0, please [open an issue](https://github.com/christefano/wp-tournament-manager/issues). Co-maintainers welcome!
+
+- Feature: The Rounds tab now splits pairing from results entry into two separate modes, **Pair rounds** and **Enter results**. Round Robins and Quads can still be paired as many rounds ahead as needed, and a Swiss round still waits for the round before it to be fully scored.
+
+- Feature: Round Robin and Quad sections can now run a double cycle.
+
+- Performance: Event page for TDs are about 31% smaller. Player cards were being displayed twice (once for the Standings table and once for the Wall chart), and this has been fixed.
+
+- Enhancement: The round selector marks completed round with a checkmark, so a TD can see which rounds are complete without opening each one.
+
+- Enhancement: The round entry form now shows when a round was last saved in a small line under the Save button, so a TD can tell at a glance whether the last entry went through.
+
+- Enhancement: The "Save"" button now switches to "Update round N" if a round already has games entered instead of always saying "Save".
+
+- Enhancement: "Validate with USCF" on the tournament edit screen now disables itself the moment any field changes, with a note that it checks saved values. Saving re-enables it.
+
+- Enhancement: The "Validate players" button now displays a message when no tournament is linked to the event yet.
+
+- Enhancement: Locking or unlocking a tournament properly returns to the tab it was performed on (instead of the event page's default tab).
+
+- Enhancement: Removing a saved section now asks for confirmation first.
+
+- Bug fix: "Suggest pairings" now works reliably after the first click. Clicking it a second time used to leave the button stuck on "Preparing suggestions..." simply because the page didn't reload. Now reloading the page also jumps straight to the pairing aid, so the boards it just prefilled are displayed right away.
+
+- Bug fix: "Suggest pairings" now works on a round that already has pairings (including previously suggested pairings), so a TD can get a different set of suggestions instead of being stuck with the first one.
+
+- Bug fix: A Quad section is now warned about when it does not hold exactly four players.
+
+- Bug fix: Sections created by an event import's automatic "Split into quads" are now correctly labeled as Quad sections instead of Round Robin sections.
+
+- Bug fix: Grand Prix points are now stored as zero whenever the Grand Prix box is unchecked, which fixes USCF exports if the GP box was unchecked but GP points had been entered.
+
+- Bug fix: A printed pairing sheet for a completed round no longer prints its heading as "Round 3 (completed)".
+
+- Bug fix: TDs used to see "this tournament is locked" after clicking "Suggest pairings" if a Swiss round had an earlier unscored round (even on an unlocked tournament). It now names the actual earlier round that needs a result first.
+
+## 1.4.1
+
+Private test release. Many thanks to everyone's feedback and testing.
+
+Security and bug fixes from a full top-down audit of 1.4, plus performance improvements. Updating from v1.4 is recommended.
+
+- Stability: The tiebreak calculations were re-checked against several sources, including WinTD and the US Chess rulebook. Everything checks out.
+
+- Enhancement: The All Tournaments list is now paged at 50 per page.
+
+- Enhancement: "Validate players" no longer risks timing out on a really big event when checking with the USCF API. "Validate players" now has a time limit, reports which players it got to, and prompts for another click to continue with the rest.
+
+- Enhancement: Round entry errors are now shown as a list instead of one run-on paragraph, which is a big improvement for TDs using a phone or tablet.
+
+- Enhancement: The setup guide now checks tournament ownership instead of trusting the address of the page that the setup guide was displayed on.
+
+- Enhancement: The USCF membership check that runs during event registration now gives up after 3 seconds instead of 10, so a slow USCF API cannot hold up a registration.
+
+- Enhancement: The player card's "no linked registration" note now says what will actually link the player. It used to suggest re-importing (which actually cannot work for a player with no USCF ID).
+
+- Bug fix: Printed pairing sheets show the round number again.
+
+- Bug fix: Confirming a roster import works reliably again, fixing the dreaded "The import could not be completed. Please try confirming again." error.
+
+- Bug fix: Deleting a tournament now also clears its "already exported" state. A leftover state could make a later tournament's setup guide skip its Export step.
+
+- Bug fix: A roster import that could not write a player now reports it instead of counting that player as imported.
+
+- Bug fix: The club affiliate ID on the Settings page and a tournament's own affiliate ID are now validated the same way.
+
+- Performance: A TD loading an event page now runs way fewer database queries. Linking imported players to their registrations is also a single database write instead of one per player.
+
+- Performance: A TD with the "Tournament Manager"" role no longer loads every tournament in the database when viewing the All Tournaments page (even though only their own tournaments were displayed).
+
+- Security fix: Hardened the ownership and access system so that a tournament director can't withdraw or view the player card of a player in another TD's tournament.
+
 ## 1.4
 
 Bug fixes, several enhancements, a few security fixes, some internal refactoring, and corrections to the README throughout. Updating from 1.3.1 or earlier is recommended.

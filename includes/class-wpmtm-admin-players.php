@@ -223,16 +223,17 @@ class WPMTM_Admin_Players {
 		if ( ! $section ) {
 			wp_die( esc_html__( 'Section not found.', 'wp-tournament-manager' ) );
 		}
+		$tournament = WPMTM_Repository::get_tournament( (int) $section->tournament_id );
+		if ( ! $tournament || ! WPMTM_Roles::user_can_manage_tournament( $tournament ) ) {
+			wp_die( esc_html__( 'No permission to edit this tournament.', 'wp-tournament-manager' ) );
+		}
 
 		global $wpdb;
 		$table = WPMTM_Schema::table( 'players' );
 
 		// phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- each $row field is individually sanitized in the foreach loop below; this line only unslashes the raw array.
 		$rows    = ( isset( $_POST['players'] ) && is_array( $_POST['players'] ) ) ? wp_unslash( $_POST['players'] ) : array();
-		$removed = array();
-		if ( isset( $_POST['removed_players'] ) ) {
-			$removed = array_filter( array_map( 'absint', explode( ',', sanitize_text_field( wp_unslash( $_POST['removed_players'] ) ) ) ) );
-		}
+		$removed = $this->parse_removed_ids( 'removed_players' );
 
 		$failed_rows = 0;
 
@@ -251,6 +252,15 @@ class WPMTM_Admin_Players {
 
 		foreach ( $rows as $key => $row ) {
 			$name = isset( $row['name'] ) ? sanitize_text_field( $row['name'] ) : '';
+			// Audit item 65: wpmtm_players.name is varchar(191)
+			// (class-wpmtm-schema.php), and an over-length value fails the
+			// write under MySQL strict mode with no indication length was
+			// the cause - the whole row silently lands in $failed_rows.
+			// mb_substr() (not substr()) so a multi-byte character is never
+			// split mid-character at the cap, matching
+			// WPMTM_Admin::handle_save_tournament()'s own cap on its own
+			// varchar(191) fields.
+			$name = mb_substr( $name, 0, 191 );
 
 			$mem_id = isset( $row['mem_id'] ) ? preg_replace( '/\D+/', '', sanitize_text_field( $row['mem_id'] ) ) : '';
 			$mem_id = substr( $mem_id, 0, 8 );
@@ -343,19 +353,16 @@ class WPMTM_Admin_Players {
 			WPMTM_Repository::renumber_players( $section_id );
 		}
 
-		$section_tournament = WPMTM_Repository::get_tournament( $section->tournament_id );
-		if ( $section_tournament ) {
-			WPMTM_Cache::flush_event_page( (int) $section_tournament->event_post_id );
-		}
+		// $tournament was fetched from this same section->tournament_id at the
+		// top of this handler for the ownership gate; this used to re-fetch it
+		// into $section_tournament for no reason (audit item 53).
+		WPMTM_Cache::flush_event_page( (int) $tournament->event_post_id );
 
-		$message = __( 'Players saved.', 'wp-tournament-manager' );
-		$notice_type = 'success';
-		if ( $failed_rows > 0 ) {
-			$message .= ' ' . sprintf(
-				/* translators: %d: number of player rows that could not be saved */
-				__( '%d row(s) could not be saved.', 'wp-tournament-manager' ),
-				$failed_rows
-			);
+		$message       = __( 'Players saved.', 'wp-tournament-manager' );
+		$notice_type   = 'success';
+		$failed_notice = $this->failed_rows_notice( $failed_rows );
+		if ( '' !== $failed_notice ) {
+			$message    .= ' ' . $failed_notice;
 			$notice_type = 'warning';
 		}
 		$this->set_notice( $notice_type, $message );

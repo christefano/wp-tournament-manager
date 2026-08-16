@@ -22,6 +22,13 @@ class WPMTM_Admin {
 
 	use WPMTM_Admin_Shared;
 
+	/**
+	 * Tournaments shown per page on the list screen (audit item 51). Named
+	 * rather than inline, matching the MAX_UPLOAD_BYTES precedent from the
+	 * 2026-07-30 maintainability pass.
+	 */
+	const TOURNAMENTS_PER_PAGE = 50;
+
 	private static $instance = null;
 
 	public static function instance() {
@@ -176,15 +183,21 @@ class WPMTM_Admin {
 	public function render_tournaments_list() {
 		$this->require_capability();
 
-		$tournaments = WPMTM_Repository::tournaments_with_counts();
-		if ( ! current_user_can( 'manage_options' ) ) {
-			$tournaments = array_values(
-				array_filter(
-					$tournaments,
-					array( 'WPMTM_Roles', 'user_can_manage_tournament' )
-				)
-			);
-		}
+		// Audit item 51: this used to fetch every tournament the install had
+		// ever held and then array_filter() a dedicated-role TD's own back out
+		// in PHP, so a club running weekly events for years paid for its whole
+		// history on every visit to this screen. The ownership filter is in the
+		// query now, and the list is paged.
+		$owner_filter = current_user_can( 'manage_options' ) ? 0 : get_current_user_id();
+		$total        = WPMTM_Repository::count_tournaments( $owner_filter );
+		$per_page     = self::TOURNAMENTS_PER_PAGE;
+		$total_pages  = $per_page > 0 ? (int) ceil( $total / $per_page ) : 1;
+
+		// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- read-only pager position, no state change.
+		$paged = isset( $_GET['paged'] ) ? absint( $_GET['paged'] ) : 1;
+		$paged = max( 1, min( $paged, max( 1, $total_pages ) ) );
+
+		$tournaments = WPMTM_Repository::tournaments_with_counts( $per_page, ( $paged - 1 ) * $per_page, $owner_filter );
 		?>
 		<div class="wrap wpmtm-wrap">
 			<h1 class="wp-heading-inline"><?php esc_html_e( 'Tournament Manager', 'wp-tournament-manager' ); ?></h1>
@@ -257,6 +270,35 @@ class WPMTM_Admin {
 				<?php endif; ?>
 				</tbody>
 			</table>
+			<?php if ( $total_pages > 1 ) : ?>
+				<div class="tablenav bottom">
+					<div class="tablenav-pages">
+						<span class="displaying-num">
+							<?php
+							printf(
+								/* translators: %s: total number of tournaments */
+								esc_html( _n( '%s tournament', '%s tournaments', $total, 'wp-tournament-manager' ) ),
+								esc_html( number_format_i18n( $total ) )
+							);
+							?>
+						</span>
+						<?php
+						echo wp_kses_post(
+							paginate_links(
+								array(
+									'base'      => add_query_arg( 'paged', '%#%' ),
+									'format'    => '',
+									'prev_text' => __( '&laquo;', 'wp-tournament-manager' ),
+									'next_text' => __( '&raquo;', 'wp-tournament-manager' ),
+									'total'     => $total_pages,
+									'current'   => $paged,
+								)
+							)
+						);
+						?>
+					</div>
+				</div>
+			<?php endif; ?>
 		</div>
 		<?php
 	}
@@ -288,7 +330,7 @@ class WPMTM_Admin {
 			wp_die( esc_html__( 'Tournament not found.', 'wp-tournament-manager' ) );
 		}
 		if ( $tournament && ! WPMTM_Roles::user_can_manage_tournament( $tournament ) ) {
-			wp_die( esc_html__( 'You do not have permission to edit this tournament.', 'wp-tournament-manager' ) );
+			wp_die( esc_html__( 'No permission to edit this tournament.', 'wp-tournament-manager' ) );
 		}
 
 		if ( $tournament && $section_id ) {
@@ -467,7 +509,7 @@ class WPMTM_Admin {
 								<button type="button" class="button" disabled title="<?php esc_attr_e( 'No Default USCF affiliate ID is set in Tournament Manager Settings.', 'wp-tournament-manager' ); ?>"><?php esc_html_e( 'Use default', 'wp-tournament-manager' ); ?></button>
 							<?php endif; ?>
 							<p class="description"><?php esc_html_e( 'This tournament\'s own affiliate ID, for a shared install running an event on behalf of a different club. Blank falls back to the club default set on the Tournament Manager Settings page at export and validation time. The "Use default" button copies that Settings value in. It does not apply automatically.', 'wp-tournament-manager' ); ?></p>
-							<p class="description"><?php esc_html_e( 'To submit a rated tournament on behalf of an affiliate other than your own, the directing TD must be an authorized tournament director of that affiliate. That affiliate\'s Affiliate Manager can add a TD as one of its authorized TDs.', 'wp-tournament-manager' ); ?></p>
+							<p class="description"><?php esc_html_e( 'To submit a rated tournament on behalf of an affiliate other than the directing TD\'s own, that TD must be an authorized tournament director of the other affiliate. That affiliate\'s Affiliate Manager can add a TD as one of its authorized TDs.', 'wp-tournament-manager' ); ?></p>
 							<p class="description"><?php esc_html_e( 'The submitting TD is responsible for the tournament\'s validity and payment of the USCF tournament fee. The lead TD, if different from the submitting TD, is also responsible for the tournament being valid. If the submitter is not the directing TD, do not list the submitter as a TD on the tournament.', 'wp-tournament-manager' ); ?></p>
 						</td>
 					</tr>
@@ -478,6 +520,7 @@ class WPMTM_Admin {
 								<button type="button" class="button" data-wpmtm-validate-tds data-context="tournament" data-tournament="<?php echo esc_attr( $tournament_id ); ?>" data-nonce="<?php echo esc_attr( wp_create_nonce( 'wpmtm_validate_tds' ) ); ?>">
 									<?php esc_html_e( 'Validate with USCF', 'wp-tournament-manager' ); ?>
 								</button>
+								<p class="description" data-wpmtm-validate-save-first hidden><strong><?php esc_html_e( 'Changes remain unsaved.', 'wp-tournament-manager' ); ?></strong> <?php esc_html_e( 'Save the tournament before validating - this checks the saved values, not unsaved edits.', 'wp-tournament-manager' ); ?></p>
 								<p class="description wpmtm-td-check-last" data-wpmtm-td-check-last><?php echo esc_html( WPMTM_USCF_Status::last_td_check_text( $tournament_id ) ); ?></p>
 								<p class="description"><?php esc_html_e( 'Checks this tournament\'s effective affiliate ID (its own if set, else the Settings default) plus its own Chief and Assistant TD IDs against the USCF ratings API, as active through the tournament end date. A blank TD field reports as missing, not the Settings default. A blank affiliate field reports the Settings default instead. Nothing is blocked by the result. Checks use the saved values, so save the tournament first if the IDs above have been changed.', 'wp-tournament-manager' ); ?></p>
 								<div data-wpmtm-validate-tds-results></div>
@@ -687,7 +730,7 @@ class WPMTM_Admin {
 			$existing = WPMTM_Repository::get_tournament( $tournament_id );
 			if ( $existing ) {
 				if ( ! WPMTM_Roles::user_can_manage_tournament( $existing ) ) {
-					wp_die( esc_html__( 'You do not have permission to edit this tournament.', 'wp-tournament-manager' ) );
+					wp_die( esc_html__( 'No permission to edit this tournament.', 'wp-tournament-manager' ) );
 				}
 				$old_event_post_id = (int) $existing->event_post_id;
 			}
@@ -835,6 +878,11 @@ class WPMTM_Admin {
 			}
 		}
 
+		// This handler writes wpmtm_tournaments with its own $wpdb call rather
+		// than through the repository, so it drops the repository's per-request
+		// read memo itself (audit item 48).
+		WPMTM_Repository::flush_memo();
+
 		// S1: surface a write failure instead of claiming success.
 		if ( false === $result ) {
 			$message = ( false !== strpos( (string) $wpdb->last_error, 'Duplicate entry' ) )
@@ -939,7 +987,7 @@ class WPMTM_Admin {
 		$tournament = $tournament_id ? WPMTM_Repository::get_tournament( $tournament_id ) : null;
 
 		if ( $tournament && ! WPMTM_Roles::user_can_manage_tournament( $tournament ) ) {
-			wp_die( esc_html__( 'You do not have permission to delete this tournament.', 'wp-tournament-manager' ) );
+			wp_die( esc_html__( 'No permission to delete this tournament.', 'wp-tournament-manager' ) );
 		}
 
 		if ( $tournament ) {
@@ -971,7 +1019,7 @@ class WPMTM_Admin {
 			wp_die( esc_html__( 'Tournament not found.', 'wp-tournament-manager' ) );
 		}
 		if ( ! WPMTM_Roles::user_can_manage_tournament( $tournament ) ) {
-			wp_die( esc_html__( 'You do not have permission to lock/unlock this tournament.', 'wp-tournament-manager' ) );
+			wp_die( esc_html__( 'No permission to lock/unlock this tournament.', 'wp-tournament-manager' ) );
 		}
 
 		$new_locked = ! (bool) $tournament->locked;
@@ -997,7 +1045,20 @@ class WPMTM_Admin {
 		// just as well. wp_get_referer() sends the TD back to whichever
 		// page they actually clicked from, falling back to the admin edit
 		// page only when there is no referer to return to.
-		wp_safe_redirect( wp_get_referer() ? wp_get_referer() : add_query_arg( array( 'page' => 'wpmtm-edit', 'id' => $tournament_id ), admin_url( 'admin.php' ) ) );
+		// The URL fragment (#tab-...) is never sent in the Referer header, so a
+		// front-end lock click would otherwise land on the event page's default
+		// tab. The lock form carries the tab hash in wpmtm_return_hash (set by JS
+		// at submit time in assets/wpmtm-frontend.js); append it, validated down
+		// to a bare fragment, so the TD stays on the tab they acted from.
+		$return_hash = '';
+		if ( isset( $_POST['wpmtm_return_hash'] ) ) { // phpcs:ignore WordPress.Security.NonceVerification.Missing -- nonce already verified by check_admin_referer() at the top of this handler.
+			$raw = wp_unslash( $_POST['wpmtm_return_hash'] ); // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- validated to a bare #fragment by the regex below before any use.
+			if ( is_string( $raw ) && preg_match( '/^#[A-Za-z0-9_-]{0,64}$/', $raw ) ) {
+				$return_hash = $raw;
+			}
+		}
+		$redirect_to = wp_get_referer() ? wp_get_referer() : add_query_arg( array( 'page' => 'wpmtm-edit', 'id' => $tournament_id ), admin_url( 'admin.php' ) );
+		wp_safe_redirect( $redirect_to . $return_hash );
 		exit;
 	}
 

@@ -188,6 +188,18 @@ class WPMTM_ETR_Import {
 	 *                        Only build_rows_from_event() ever supplies it;
 	 *                        a CSV import always normalizes to null, since
 	 *                        the pairing-export CSV has no notes column.
+	 *                        An optional 12th element - attendee_id
+	 *                        (docs/SPEC.md, "Decisions (2026-07-MM, attendee
+	 *                        id carry-through)"), the attendee post id
+	 *                        (wp-etr's row key), an integer id or 0/absent
+	 *                        for no attendee (CSV import) - is carried
+	 *                        through into the 'attendee_id' key, casting to
+	 *                        int and normalizing to null the same way family_key
+	 *                        does (0 and absent both become null). Only ever
+	 *                        supplied by build_rows_from_event() (read
+	 *                        straight off the attendee's post id); a CSV
+	 *                        import always normalizes to null, since the
+	 *                        pairing-export CSV has no attendee id column.
 	 * @return array array( 'rows' => ..., 'sections' => ..., 'warnings' => ... )
 	 *               - same success shape parse() returns.
 	 */
@@ -202,7 +214,7 @@ class WPMTM_ETR_Import {
 				continue;
 			}
 
-			$fields = array_pad( array_values( $fields ), 11, '' );
+			$fields = array_pad( array_values( $fields ), 12, '' );
 
 			$last_name  = trim( (string) $fields[0] );
 			$first_name = trim( (string) $fields[1] );
@@ -245,6 +257,15 @@ class WPMTM_ETR_Import {
 			// permanent CSV-path state) normalizes to null the same way
 			// family_key does.
 			$notes = mb_substr( trim( (string) $fields[10] ), 0, self::NOTES_MAX_LENGTH );
+
+			// Optional 12th element: attendee_id (docs/SPEC.md, "Decisions
+			// (2026-07-MM, attendee id carry-through)"), the ETECF/Event-
+			// Tickets attendee post id, or 0/absent for CSV import (no
+			// attendee source). Cast to int, normalize 0/empty to null the
+			// same way family_key does - a CSV row is always padded to
+			// exactly 12 with '' above, so this normalizes absent and 0
+			// identically.
+			$attendee_id = is_numeric( $fields[11] ) && (int) $fields[11] > 0 ? (int) $fields[11] : null;
 
 			if ( '' === $last_name && '' === $first_name ) {
 				continue; // fully blank data row.
@@ -328,6 +349,7 @@ class WPMTM_ETR_Import {
 				'rating_source'  => $rating_source,
 				'rating_checked' => $rating_checked,
 				'notes'          => '' !== $notes ? $notes : null,
+				'attendee_id'    => $attendee_id,
 			);
 		}
 
@@ -416,6 +438,15 @@ class WPMTM_ETR_Import {
 	 *   never valid. When the count IS a clean multiple of 4, every group is
 	 *   a full quad and nothing is folded.
 	 *
+	 * Full quad groups are tagged 'Q' (quad), not 'R' (round robin). Both
+	 * produce the same 3-round schedule for exactly 4 players (see
+	 * WPMTM_Pairing_Aid::RR_TYPES, which treats 'R' and 'Q' identically for
+	 * pairing purposes), so this is behavior-neutral for scheduling. 'Q' is
+	 * used because the admin sections editor's quad-size warning (flagging a
+	 * "Quad" section that does not have exactly 4 players) only fires for
+	 * 'Q' sections, and because these groups are literally named "Quad 1",
+	 * "Quad 2", etc. - tagging them 'R' would be internally inconsistent.
+	 *
 	 * Pure and WP-independent: operates on plain arrays, does no database or
 	 * WordPress calls, and is unit-tested directly.
 	 *
@@ -425,7 +456,7 @@ class WPMTM_ETR_Import {
 	 * @return array List of groups, each:
 	 *   array(
 	 *     'suffix'   => 'Quad 1'|'Quad 2'|...|'Swiss',
-	 *     'trn_type' => 'R'|'S',
+	 *     'trn_type' => 'Q'|'S',
 	 *     'players'  => array( ...ordered subset of $players... ),
 	 *     'warning'  => string, // only present on the "fewer than 4" path.
 	 *   )
@@ -458,7 +489,7 @@ class WPMTM_ETR_Import {
 		for ( $i = 0; $i < $clean_quads; $i++ ) {
 			$groups[] = array(
 				'suffix'   => 'Quad ' . ( $i + 1 ),
-				'trn_type' => 'R',
+				'trn_type' => 'Q',
 				'players'  => array_slice( $players, $offset, 4 ),
 			);
 			$offset += 4;
@@ -531,6 +562,7 @@ class WPMTM_ETR_Import {
 	 *   'sections_created' => int,
 	 *   'players_imported' => int,
 	 *   'players_skipped'  => int,
+	 *   'players_failed'   => int,  // rows the database rejected (audit item 46)
 	 *   'sections'         => array( section_name => array( 'section_id', 'imported' ) ),
 	 *                         // section_name is the CSV name, or "CSV name Quad N" /
 	 *                         // "CSV name Swiss" for each group of a quad split.
@@ -544,6 +576,7 @@ class WPMTM_ETR_Import {
 			'sections_created' => 0,
 			'players_imported' => 0,
 			'players_skipped'  => 0,
+			'players_failed'   => 0,
 			'sections'         => array(),
 			'warnings'         => array(),
 		);
@@ -608,7 +641,11 @@ class WPMTM_ETR_Import {
 				$summary['warnings'][] = sprintf( 'Section "%s" already had players. The imported roster was appended after existing pairing number %d.', $csv_section_name, $existing_max );
 			}
 
-			$imported_here = $this->insert_players( $section_id, $ordered, $existing_max + 1 );
+			list( $imported_here, $failed_here ) = $this->insert_players( $section_id, $ordered, $existing_max + 1 );
+			if ( $failed_here > 0 ) {
+				$summary['players_failed'] += $failed_here;
+				$summary['warnings'][]      = sprintf( 'Section "%s": %d player row(s) could not be written to the database.', $csv_section_name, $failed_here );
+			}
 
 			$summary['players_imported']            += $imported_here;
 			$summary['sections'][ $csv_section_name ] = array(
@@ -650,7 +687,11 @@ class WPMTM_ETR_Import {
 			);
 			$summary['sections_created']++;
 
-			$imported_here = $this->insert_players( $section_id, $group['players'], 1 );
+			list( $imported_here, $failed_here ) = $this->insert_players( $section_id, $group['players'], 1 );
+			if ( $failed_here > 0 ) {
+				$summary['players_failed'] += $failed_here;
+				$summary['warnings'][]      = sprintf( '%s: %d player row(s) could not be written to the database.', $group_name, $failed_here );
+			}
 
 			$summary['players_imported']  += $imported_here;
 			$summary['sections'][ $group_name ] = array(
@@ -665,16 +706,27 @@ class WPMTM_ETR_Import {
 	}
 
 	/**
-	 * Inserts a fresh wpmtm_sections row and returns its id. $fields must
-	 * supply sec_name, trn_type, tot_rnds, rated; sec_num is assigned here
-	 * via WPMTM_Repository::next_sec_num() and everything else uses the
-	 * same defaults the plain (non-quad) create path always used.
+	 * Creates a brand-new section for an imported CSV/event section.
 	 *
-	 * timectl seeds from the club's first Settings preset (WPMTM_Plugin::
-	 * get_timectl_presets()) rather than blank, since an imported section
-	 * has no TD-filled form to source it from and USCF export/validation
-	 * both need a parseable time control; r_system is derived from that
-	 * same value so the two stay consistent.
+	 * Restored 2026-08-10 (audit item 57). Commit 86357e4 ("Add attendee_id to
+	 * wpmtm_players; populate on event import") rewrote insert_players()'s
+	 * docblock and deleted this method and max_pair_num() below along with it,
+	 * leaving both call sites in import() and import_as_quads() pointing at
+	 * nothing. Every confirmed roster import fataled on "Call to undefined
+	 * method" from 1.3.5 onward - caught by handle_etr_confirm()'s
+	 * catch ( Throwable ), which restored the pending transient and showed
+	 * "The import could not be completed. Please try confirming again.", so it
+	 * read as a transient failure and retried into the same wall forever.
+	 * Restored verbatim from 86357e4^; the same commit's stray duplicate
+	 * docblock (audit item 40) is gone too.
+	 *
+	 * Time control and rating system come from the club's first Settings preset
+	 * rather than the CSV, which carries neither: the TD sets them per section
+	 * afterwards in the sections editor.
+	 *
+	 * @param int   $tournament_id
+	 * @param array $fields sec_name, trn_type, tot_rnds, rated.
+	 * @return int New section id.
 	 */
 	protected function create_section( $tournament_id, array $fields ) {
 		global $wpdb;
@@ -703,9 +755,20 @@ class WPMTM_ETR_Import {
 			array( '%d', '%d', '%s', '%s', '%s', '%s', '%d', '%s', '%d', '%s', '%d' )
 		);
 
+		// This writes wpmtm_sections with its own $wpdb call, so it drops the
+		// repository's per-request read memo (audit item 48).
+		WPMTM_Repository::flush_memo();
+
 		return (int) $wpdb->insert_id;
 	}
 
+	/**
+	 * Highest pair_num already used in a section, or 0 for an empty one, so a
+	 * roster imported onto a section that already has players is appended
+	 * after them rather than colliding with the section_pair unique key.
+	 *
+	 * Restored 2026-08-10 alongside create_section() above - see its docblock.
+	 */
 	protected function max_pair_num( $section_id ) {
 		global $wpdb;
 		$players_table = WPMTM_Schema::table( 'players' );
@@ -715,7 +778,9 @@ class WPMTM_ETR_Import {
 
 	/**
 	 * Inserts $ordered as a section's players, starting at $start_pair_num
-	 * and incrementing by 1 per row. Returns the number of rows inserted.
+	 * and incrementing by 1 per row. Returns array( inserted, failed ) - a row
+	 * the database rejects consumes no pair_num and is counted as failed
+	 * rather than silently reported as imported (audit item 46).
 	 * $row['photo_id'] (int|null, see normalize_rows()'s docblock) is
 	 * written straight through to wpmtm_players.photo_id - null for a CSV
 	 * import or any wp-etr row with no photo on file. $row['family_key']
@@ -734,7 +799,10 @@ class WPMTM_ETR_Import {
 	 * text. sanitize_textarea_field() runs again here, right before the
 	 * write, as this method's own defense-in-depth layer (WP-coupled, only
 	 * live-verified, not unit-tested - see normalize_rows()'s docblock for
-	 * the pure trim/cap step that already ran on this value).
+	 * the pure trim/cap step that already ran on this value). $row['attendee_id']
+	 * (int|null, docs/SPEC.md) carries through the same way into
+	 * wpmtm_players.attendee_id - null for every CSV import and for any
+	 * wp-etr row with no attendee post id on file.
 	 */
 	protected function insert_players( $section_id, array $ordered, $start_pair_num ) {
 		global $wpdb;
@@ -742,6 +810,7 @@ class WPMTM_ETR_Import {
 
 		$pair_num = (int) $start_pair_num;
 		$inserted = 0;
+		$failed   = 0;
 		foreach ( $ordered as $row ) {
 			// sanitize_textarea_field() - see this method's own docblock.
 			// Strips tags/normalizes whitespace on top of normalize_rows()'s
@@ -750,7 +819,13 @@ class WPMTM_ETR_Import {
 			// area), not this input-side pass.
 			$notes = ! empty( $row['notes'] ) ? sanitize_textarea_field( $row['notes'] ) : null;
 
-			$wpdb->insert( // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery -- custom wpmtm_players table, no core API; $wpdb->insert() escapes values internally.
+			// Audit item 46: the return value used to be discarded and
+			// $inserted incremented unconditionally, so a row the database
+			// rejected was still reported to the TD as imported. The sibling
+			// repeater handlers (WPMTM_Admin_Players, WPMTM_Admin_Sections)
+			// both count failures; this now matches them, and import()'s
+			// summary carries the count into the TD's notice.
+			$result = $wpdb->insert( // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery -- custom wpmtm_players table, no core API; $wpdb->insert() escapes values internally.
 				$players_table,
 				array(
 					'section_id'     => $section_id,
@@ -764,13 +839,18 @@ class WPMTM_ETR_Import {
 					'rating_source'  => ! empty( $row['rating_source'] ) ? $row['rating_source'] : null,
 					'rating_checked' => ! empty( $row['rating_checked'] ) ? (int) $row['rating_checked'] : null,
 					'notes'          => $notes,
+					'attendee_id'    => ! empty( $row['attendee_id'] ) ? (int) $row['attendee_id'] : null,
 				),
-				array( '%d', '%d', '%s', '%s', '%s', '%s', '%d', '%s', '%s', '%d', '%s' )
+				array( '%d', '%d', '%s', '%s', '%s', '%s', '%d', '%s', '%s', '%d', '%s', '%d' )
 			);
+			if ( false === $result ) {
+				++$failed;
+				continue; // pair_num is not consumed by a row that was never written.
+			}
 			$pair_num++;
 			$inserted++;
 		}
 
-		return $inserted;
+		return array( $inserted, $failed );
 	}
 }

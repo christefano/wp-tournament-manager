@@ -209,7 +209,7 @@ class WPMTM_Settings {
 			esc_attr( $opts['affiliate_id'] )
 		);
 		echo '<p class="description">' . esc_html__( 'The letter A followed by 7 digits, or leave blank. Only required to export RATED tournaments.', 'wp-tournament-manager' ) . '</p>';
-		echo '<p class="description">' . esc_html__( 'To submit a rated tournament on behalf of an affiliate other than your own, the directing TD must be an authorized tournament director of that affiliate. That affiliate\'s Affiliate Manager can add a TD as one of its authorized TDs.', 'wp-tournament-manager' ) . '</p>';
+		echo '<p class="description">' . esc_html__( 'To submit a rated tournament on behalf of an affiliate other than the directing TD\'s own, that TD must be an authorized tournament director of the other affiliate. That affiliate\'s Affiliate Manager can add a TD as one of its authorized TDs.', 'wp-tournament-manager' ) . '</p>';
 		echo '<p class="description">' . esc_html__( 'The submitting TD is responsible for the tournament\'s validity and payment of the USCF tournament fee. The lead TD, if different from the submitting TD, is also responsible for the tournament being valid. If the submitter is not the directing TD, do not list the submitter as a TD on the tournament.', 'wp-tournament-manager' ) . '</p>';
 	}
 
@@ -346,11 +346,20 @@ class WPMTM_Settings {
 		$existing = is_array( $existing ) ? $existing : array();
 		$out      = wp_parse_args( $existing, WPMTM_Plugin::DEFAULTS );
 
-		$affiliate = isset( $input['affiliate_id'] ) ? strtoupper( sanitize_text_field( $input['affiliate_id'] ) ) : '';
-		if ( '' === $affiliate || preg_match( '/^A\d{7}$/', $affiliate ) ) {
+		// Audit item 47: this used to enforce /^A\d{7}$/ while the
+		// per-tournament override on the tournament form went through
+		// WPMTM_USCF_Status::sanitize_affiliate_id() (a letter followed by
+		// digits, capped at the varchar(10) column width). Two rules for one
+		// field, with contradictory error copy, and an affiliate ID the
+		// tournament form accepted was rejected here. Both now use
+		// sanitize_affiliate_id(), the same function the registration check,
+		// the CLI, and the export gate already validate against.
+		$affiliate_raw = isset( $input['affiliate_id'] ) ? trim( sanitize_text_field( $input['affiliate_id'] ) ) : '';
+		$affiliate     = '' !== $affiliate_raw ? WPMTM_USCF_Status::sanitize_affiliate_id( $affiliate_raw ) : '';
+		if ( '' === $affiliate_raw || ( '' !== $affiliate && strlen( $affiliate ) <= 10 ) ) {
 			$out['affiliate_id'] = $affiliate;
 		} else {
-			add_settings_error( WPMTM_Plugin::OPTION_KEY, 'affiliate_id_invalid', __( 'Affiliate ID must be blank or the letter A followed by 7 digits. Previous value kept.', 'wp-tournament-manager' ) );
+			add_settings_error( WPMTM_Plugin::OPTION_KEY, 'affiliate_id_invalid', __( 'Affiliate ID must be blank or a letter followed by digits, up to 10 characters (e.g. A1234567). Previous value kept.', 'wp-tournament-manager' ) );
 		}
 
 		$chief = isset( $input['chief_td_id'] ) ? sanitize_text_field( $input['chief_td_id'] ) : '';
@@ -427,7 +436,7 @@ class WPMTM_Settings {
 
 	public function render_settings_page() {
 		if ( ! current_user_can( 'manage_options' ) ) {
-			wp_die( esc_html__( 'You do not have permission to access this page.', 'wp-tournament-manager' ) );
+			wp_die( esc_html__( 'No permission to access this page.', 'wp-tournament-manager' ) );
 		}
 		?>
 		<div class="wrap">

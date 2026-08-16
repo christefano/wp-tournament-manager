@@ -269,10 +269,23 @@
 			return;
 		}
 		var sectionName  = panel.querySelector( 'h3' );
-		var currentRound = panel.querySelector( '.wpmtm-round-selector strong' );
+		// The selected round is the one non-link pill in the band. It was a
+		// <strong> until the 2026-07-24 pill redesign (see
+		// WPMTM_Frontend_TD::render_round_selector()); this selector went on
+		// matching the old markup, so every printed pairing sheet since then
+		// silently lost its "- Round N" suffix (audit item 41).
+		var currentRound = panel.querySelector( '.wpmtm-round-selector [aria-selected="true"]' );
+		// Read the number span, not the whole pill. Since the completed-round
+		// marks landed, a finished round's pill also contains the check glyph
+		// and a "(completed)" screen-reader span, and the pill's textContent
+		// concatenates all three - which printed as "Round 3(completed)".
+		// Falls back to the pill itself so the pre-mark markup still works.
+		var roundLabel = currentRound
+			? ( currentRound.querySelector( '.wpmtm-round-tab-num' ) || currentRound ).textContent.trim()
+			: '';
 		var heading = document.createElement( 'h2' );
 		heading.textContent = ( sectionName ? sectionName.textContent : '' )
-			+ ( currentRound ? ' - Round ' + currentRound.textContent : '' );
+			+ ( roundLabel ? ' - Round ' + roundLabel : '' );
 		openPrintWindow( heading, aid, 'pairing-sheet' );
 	}
 
@@ -347,6 +360,16 @@
 			);
 		}
 		container.appendChild( summaryEl );
+
+		// The server stopped short of checking everyone to stay inside its
+		// per-request budget (audit item 49). Say so, rather than leaving the
+		// TD to read a pile of "not checked yet" rows as a failure.
+		if ( data.budget_spent && i18n.summaryBudget ) {
+			var budgetEl = document.createElement( 'p' );
+			budgetEl.className = 'wpmtm-validate-budget';
+			budgetEl.textContent = i18n.summaryBudget;
+			container.appendChild( budgetEl );
+		}
 
 		var table = document.createElement( 'table' );
 		table.className = 'wpmtm-table wpmtm-validate-table';
@@ -436,7 +459,7 @@
 		// 2026-07-21 BOTH files load together on an event page for a
 		// capability holder. Without this line the two copies fought over the
 		// same submit: the first set data-submitted, the second saw it already
-		// set and cancelled as a double submit, so a TD's "Save round" never
+		// set and canceled as a double submit, so a TD's "Save round" never
 		// posted at all (found in a real browser 2026-07-22). Marking the
 		// EVENT keeps genuine double-submit protection intact, since a real
 		// second submit is a different event object with no mark on it.
@@ -451,8 +474,16 @@
 		// data-wpmtm-confirm submit handler, which also loads on this page for
 		// a capability holder - reusing that attribute would pop the dialog
 		// twice. Checked before the form is marked submitted below, so
-		// cancelling leaves the form fully usable for a later real submit.
-		var saveConfirm = form.getAttribute( 'data-wpmtm-save-confirm' );
+		// canceling leaves the form fully usable for a later real submit.
+		// The submitting button may carry its own confirm text, which wins over
+		// the form's: "Save pairings" posts the same form as "Save round" but
+		// means something different, so it must not ask about overwriting
+		// results it is deliberately leaving blank. e.submitter is the button
+		// that triggered this submit; older browsers without it simply fall
+		// back to the form's wording, which is safe rather than silent.
+		var submitter   = e.submitter || null;
+		var saveConfirm = ( submitter && submitter.getAttribute( 'data-wpmtm-save-confirm' ) )
+			|| form.getAttribute( 'data-wpmtm-save-confirm' );
 		if ( saveConfirm && ! window.confirm( saveConfirm ) ) {
 			e.preventDefault();
 			return;
@@ -644,10 +675,70 @@
 		}
 	} );
 
+	// Landing on the round-entry form after a "Suggest pairings" click. The
+	// link's own fragment has to stay #tab-round-entry[-slug]: that is what
+	// wp-etr's tab script and this file's own section tablist both read to
+	// open the right tab and the right section, so it cannot be repointed at
+	// the form itself. Instead, once the page has settled, scroll the
+	// triggering section's round-entry <details> into view and make sure it is
+	// open, so the TD sees the prefilled boards instead of having to hunt for
+	// them below the pairing aid. Deferred a frame so the tablist has already
+	// shown/hidden its panels - scrolling to an element inside a
+	// display:none panel would measure the wrong position.
+	document.addEventListener( 'DOMContentLoaded', function () {
+		var match = window.location.search.match( /[?&]wpmtm_suggest_(\d+)=/ );
+		if ( ! match ) {
+			return;
+		}
+		// Land on the PAIRING AID, not the results block. A TD who just asked
+		// for suggestions is pairing, so the aid (and the board rows it
+		// explains) is what they came back to look at; the results block sits
+		// below it and can be scrolled to when the games have actually been
+		// played. Falls back to the round-entry block if the aid is not on the
+		// page for some reason, so the landing is never nowhere.
+		var aid = document.getElementById( 'wpmtm-pairing-aid-' + match[ 1 ] );
+		var target = aid
+			? ( aid.closest ? aid.closest( 'details' ) || aid : aid )
+			: document.getElementById( 'wpmtm-round-entry-' + match[ 1 ] );
+		if ( ! target ) {
+			return;
+		}
+		if ( 'DETAILS' === target.tagName && ! target.open ) {
+			target.open = true;
+		}
+		window.requestAnimationFrame( function () {
+			if ( target.scrollIntoView ) {
+				target.scrollIntoView( { block: 'start' } );
+			}
+		} );
+	} );
+
 	// Hiding the TEC event date/cost header and the prev/next event links on
 	// the Standings/Wall chart/Rounds tabs is done in CSS alone
 	// (wpmtm-frontend.css), keyed off the `data-etr-active-tab` attribute that
 	// wp-etr's own etr-tabs.js already mirrors onto <body> - the same
 	// mechanism etr-registrations.css uses to hide the "Get Tickets" form and
 	// "Add to calendar" widget on non-Details tabs. No JS is needed here.
+	// Lock/unlock forms carry the current tab hash to return to
+	// (wpmtm_return_hash): the URL fragment is never sent in the Referer header,
+	// so without this a front-end lock click would bounce the TD to the event's
+	// default tab. Capture phase, so this sets the value before any confirm
+	// handler that might cancel - if the submit proceeds, the current #tab-...
+	// rides along and WPMTM_Admin::handle_toggle_lock() appends it to the
+	// redirect.
+	document.addEventListener(
+		'submit',
+		function ( e ) {
+			var form = e.target;
+			if ( ! form || ! form.querySelector ) {
+				return;
+			}
+			var field = form.querySelector( 'input[name="wpmtm_return_hash"]' );
+			if ( field ) {
+				field.value = window.location.hash || '';
+			}
+		},
+		true
+	);
+
 } )();

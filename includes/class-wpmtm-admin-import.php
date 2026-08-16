@@ -19,6 +19,13 @@ class WPMTM_Admin_Import {
 
 	use WPMTM_Admin_Shared;
 
+	/**
+	 * Hard cap on an uploaded roster CSV, in bytes (1 MB). A pairing-export
+	 * roster is a few KB even for a large club; this only exists to reject an
+	 * obviously-wrong file before it is read.
+	 */
+	const MAX_UPLOAD_BYTES = 1048576;
+
 	private static $instance = null;
 
 	public static function instance() {
@@ -182,6 +189,9 @@ class WPMTM_Admin_Import {
 		if ( ! $tournament ) {
 			wp_die( esc_html__( 'Tournament not found.', 'wp-tournament-manager' ) );
 		}
+		if ( ! WPMTM_Roles::user_can_manage_tournament( $tournament ) ) {
+			wp_die( esc_html__( 'No permission to edit this tournament.', 'wp-tournament-manager' ) );
+		}
 
 		$redirect_back = add_query_arg( array( 'page' => 'wpmtm-edit', 'id' => $tournament_id ), admin_url( 'admin.php' ) );
 
@@ -235,6 +245,9 @@ class WPMTM_Admin_Import {
 		if ( ! $tournament ) {
 			wp_die( esc_html__( 'Tournament not found.', 'wp-tournament-manager' ) );
 		}
+		if ( ! WPMTM_Roles::user_can_manage_tournament( $tournament ) ) {
+			wp_die( esc_html__( 'No permission to edit this tournament.', 'wp-tournament-manager' ) );
+		}
 
 		$redirect_back = add_query_arg( array( 'page' => 'wpmtm-edit', 'id' => $tournament_id ), admin_url( 'admin.php' ) );
 
@@ -252,8 +265,7 @@ class WPMTM_Admin_Import {
 			exit;
 		}
 
-		$max_bytes = 1048576; // 1 MB cap.
-		if ( ! isset( $file['size'] ) || $file['size'] > $max_bytes ) {
+		if ( ! isset( $file['size'] ) || $file['size'] > self::MAX_UPLOAD_BYTES ) {
 			$this->set_notice( 'error', __( 'The uploaded file is larger than the 1 MB limit.', 'wp-tournament-manager' ) );
 			wp_safe_redirect( $redirect_back );
 			exit;
@@ -338,6 +350,9 @@ class WPMTM_Admin_Import {
 		}
 
 		$tournament = WPMTM_Repository::get_tournament_by_event( $event_id );
+		if ( $tournament && ! WPMTM_Roles::user_can_manage_tournament( $tournament ) ) {
+			wp_die( esc_html__( 'No permission to edit this tournament.', 'wp-tournament-manager' ) );
+		}
 		if ( ! $tournament ) {
 			$tournament_id = $this->create_tournament_for_event( $event_id );
 			if ( ! $tournament_id ) {
@@ -382,10 +397,10 @@ class WPMTM_Admin_Import {
 	 * into the same row format (last, first, USCF id, rating, section,
 	 * status) its own "Pairing export" CSV uses, plus a 7th cell -
 	 * photo_id -, an 8th - family_key -, a 9th - rating_source -, a
-	 * 10th - rating_checked -, and an 11th - notes - the CSV never
-	 * carries, so WPMTM_ETR_Import::normalize_rows() sees identical input
-	 * for the first 6 cells regardless of whether it arrived via a CSV
-	 * upload or this button, with all five extra cells only ever
+	 * 10th - rating_checked -, an 11th - notes -, and a 12th - attendee_id -
+	 * the CSV never carries, so WPMTM_ETR_Import::normalize_rows() sees
+	 * identical input for the first 6 cells regardless of whether it arrived
+	 * via a CSV upload or this button, with all six extra cells only ever
 	 * populated on this door. rating_source/rating_checked (docs/SPEC.md,
 	 * "Decisions (2026-07-17, rating provenance)") are read directly off
 	 * the attendee's own post meta using $r['id'] (wp-etr's own row key
@@ -404,10 +419,11 @@ class WPMTM_Admin_Import {
 	 * sanitize_textarea_field()'d and defensively length-capped here in
 	 * the WP layer, the same way family_key's sanitize_email() runs here
 	 * rather than in the pure normalize_rows() (see that method's own
-	 * docblock).
+	 * docblock). attendee_id is $r['id'], the attendee post id itself,
+	 * or 0 when not present.
 	 *
 	 * @param int $event_id Already-validated event post id.
-	 * @return array List of 11-element raw rows.
+	 * @return array List of 12-element raw rows.
 	 */
 	protected function build_rows_from_event( $event_id ) {
 		$rows = array();
@@ -459,6 +475,9 @@ class WPMTM_Admin_Import {
 					// (pure, unit-tested) - belt and suspenders, not a
 					// contradiction.
 					isset( $r['id'] ) ? mb_substr( sanitize_textarea_field( (string) get_post_meta( (int) $r['id'], WPMTM_ETR_Import::NOTES_FIELD, true ) ), 0, WPMTM_ETR_Import::NOTES_MAX_LENGTH ) : '',
+					// attendee_id: wp-etr's row key ($r['id']), the attendee post id;
+					// 0 when absent (CSV import).
+					isset( $r['id'] ) ? (int) $r['id'] : 0,
 				);
 			}
 		}
@@ -861,6 +880,9 @@ class WPMTM_Admin_Import {
 		if ( ! $tournament ) {
 			wp_die( esc_html__( 'Tournament not found.', 'wp-tournament-manager' ) );
 		}
+		if ( ! WPMTM_Roles::user_can_manage_tournament( $tournament ) ) {
+			wp_die( esc_html__( 'No permission to edit this tournament.', 'wp-tournament-manager' ) );
+		}
 
 		$redirect_back = add_query_arg( array( 'page' => 'wpmtm-edit', 'id' => $tournament_id ), admin_url( 'admin.php' ) );
 
@@ -923,7 +945,26 @@ class WPMTM_Admin_Import {
 			// instead of having to re-upload the CSV after a mid-import
 			// failure.
 			set_transient( $this->etr_import_transient_key(), $pending, 15 * MINUTE_IN_SECONDS );
-			$this->set_notice( 'error', __( 'The import could not be completed. Please try confirming again.', 'wp-tournament-manager' ) );
+
+			// Audit item 57: an Error is a programming fault, not the
+			// transient mid-import failure this catch exists for, and "please
+			// try confirming again" is actively wrong advice for one - the
+			// retry hits the identical wall. A missing method deleted by an
+			// unrelated commit hid behind this message for two releases
+			// precisely because nothing here told them apart or left a trace.
+			// Exceptions keep the retry wording; an Error says so and is
+			// logged.
+			$is_bug = $e instanceof Error;
+			if ( $is_bug ) {
+				error_log( 'Tournament Manager: roster import failed with a code-level error - ' . $e->getMessage() . ' in ' . $e->getFile() . ':' . $e->getLine() ); // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- a genuine programming fault the site owner needs a trace of; the TD-facing notice below deliberately carries no internals.
+			}
+
+			$this->set_notice(
+				'error',
+				$is_bug
+					? __( 'The import could not be completed because of a problem in Tournament Manager itself, so retrying will not help. Nothing was imported. The details were written to the site error log - please report them to the plugin maintainer.', 'wp-tournament-manager' )
+					: __( 'The import could not be completed. Please try confirming again.', 'wp-tournament-manager' )
+			);
 			wp_safe_redirect( $redirect_back );
 			exit;
 		}
@@ -937,6 +978,18 @@ class WPMTM_Admin_Import {
 			(int) $summary['players_imported'],
 			(int) $summary['players_skipped']
 		);
+
+		// Audit item 46: rows the database rejected are counted separately from
+		// rows deliberately skipped (no-shows, unmapped sections), and reported,
+		// rather than being folded into the "imported" total as they used to be.
+		$failed_rows = isset( $summary['players_failed'] ) ? (int) $summary['players_failed'] : 0;
+		if ( $failed_rows > 0 ) {
+			$message .= ' ' . sprintf(
+				/* translators: %d: number of player rows the database rejected */
+				__( '%d row(s) could not be saved.', 'wp-tournament-manager' ),
+				$failed_rows
+			);
+		}
 
 		if ( ! empty( $summary['warnings'] ) ) {
 			$warnings     = array_values( $summary['warnings'] );
@@ -952,7 +1005,7 @@ class WPMTM_Admin_Import {
 			}
 		}
 
-		$this->set_notice( 'success', $message );
+		$this->set_notice( $failed_rows > 0 ? 'warning' : 'success', $message );
 		wp_safe_redirect( $redirect_back );
 		exit;
 	}

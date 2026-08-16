@@ -58,6 +58,30 @@
 	max-width: 220px;
 }
 
+/* Type and Cycles selects fill their table cell but never wider, so a long
+ * option label truncates inside the column instead of rendering at natural
+ * width and overlapping the Advanced/Rated cells beside it under the table's
+ * fixed layout. */
+.wpmtm-wrap .wpmtm-repeater select[data-wpmtm-trn-type],
+.wpmtm-wrap .wpmtm-repeater select[data-wpmtm-cycles] {
+	/* Hard cap in em, not 100%: a percentage is circular in an auto-layout table
+	   (the cell is sized to the select, so 100% never shrinks it), which let the
+	   long "Quad" label drive the column wide enough to overlap the Advanced
+	   cell. A fixed cap bounds the column; the closed select truncates, and the
+	   full option text still shows when the dropdown opens. */
+	max-width: 13em;
+	width: 100%;
+	box-sizing: border-box;
+}
+
+/* Quad section size warning: a quad that is not exactly 4 players is a setup
+   mistake, not plugin help text, so it reads in WordPress's warning amber
+   rather than the muted grey of a .description. */
+.wpmtm-wrap .wpmtm-repeater .wpmtm-quad-size-warning {
+	color: #8a6100;
+	font-weight: 600;
+}
+
 .wpmtm-wrap .wpmtm-repeater details summary {
 	cursor: pointer;
 	white-space: nowrap;
@@ -245,12 +269,6 @@
 	display: contents;
 }
 
-.wpmtm-setup-guide-progress {
-	font-size: 12px;
-	color: #8c8f94;
-	white-space: nowrap;
-}
-
 /* Disclosure triangle (2026-07-21): .wpmtm-setup-guide-summary's own
    display:flex above suppresses the native <summary> marker in every
    browser that draws one (the marker only appears in the list-item
@@ -264,7 +282,7 @@
 	flex-shrink: 0;
 	/* 2026-07-23 (owner request): a larger touch/click target. The visible
 	   triangle stays small (drawn on ::before), but the element itself is a
-	   44x28 box centred on it, so aiming at the disclosure is forgiving. The
+	   44x28 box centered on it, so aiming at the disclosure is forgiving. The
 	   whole <summary> already toggles the panel; this just makes the marker
 	   itself an easy target rather than a 6px sliver. */
 	display: flex;
@@ -405,14 +423,6 @@
 .wpmtm-setup-guide-help:hover,
 .wpmtm-setup-guide-help:focus {
 	opacity: 0.75;
-}
-
-.wpmtm-setup-guide-warning {
-	margin: 8px 0 0;
-	padding: 8px 10px;
-	background: #fcf0f1;
-	border-left: 4px solid #d63638;
-	color: #1d2327;
 }
 
 /* Change 6: Lock/unlock control on the Edit Tournament screen. Matches

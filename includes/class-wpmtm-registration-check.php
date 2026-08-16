@@ -229,7 +229,13 @@ class WPMTM_Registration_Check {
 		$through = WPMTM_USCF_Status::resolve_through_date( '', $this->event_end_date( $event_id ), '' );
 
 		$status = WPMTM_USCF_Status::instance();
-		$env    = $status->get_member( $clean_id ); // sync, existing 1-day cache; never forced here.
+		// Sync, existing 1-day cache, never forced here. The short timeout is
+		// audit item 50: this runs inside Tickets Commerce checkout, so a cache
+		// miss against a slow API sits on the buyer's critical path. The check
+		// is advisory - a timeout returns null and this method exits silently
+		// below, exactly as it already did for any other API failure - so
+		// waiting the full REQUEST_TIMEOUT would buy the registrant nothing.
+		$env    = $status->get_member( $clean_id, false, false, WPMTM_USCF_Status::CHECKOUT_TIMEOUT );
 		if ( null === $env ) {
 			return; // API down/unresolved - skip silently, never affect checkout.
 		}
@@ -339,7 +345,7 @@ class WPMTM_Registration_Check {
 		foreach ( $messages as $message ) {
 			$box .= '<li>' . esc_html( $message ) . '</li>';
 		}
-		$box .= '</ul><p>' . esc_html__( 'This does not affect your registration. Contact the tournament director if you believe this is a mistake.', 'wp-tournament-manager' ) . '</p></div>';
+		$box .= '</ul><p>' . esc_html__( 'This does not affect the registration. Contact the tournament director if it looks like a mistake.', 'wp-tournament-manager' ) . '</p></div>';
 
 		return $html . $box;
 	}

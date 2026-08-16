@@ -377,9 +377,17 @@ class WPMTM_Frontend {
 	 * Returns '' when no tournament resolves, so the shortcode is silently
 	 * absent rather than showing an error to visitors.
 	 *
-	 * Never renders the TD panel and never defines DONOTCACHEPAGE - this
-	 * is public data only, on a page render_td_block() has no business
-	 * touching.
+	 * Never renders the TD panel: this is public data only, on a page
+	 * render_td_block() has no business touching.
+	 *
+	 * This method defines no cache constant of its own. It used to say it
+	 * never defined DONOTCACHEPAGE at all, which stopped being true when the
+	 * editor-only player card shipped (audit item 44): render_public_block()
+	 * below reaches WPMTM_Frontend_Public_Card::set_card_tournament(), which
+	 * defines DONOTCACHEPAGE the moment a viewer is cleared to see cards. That
+	 * is the behavior worth having - a shortcode render carrying registrant
+	 * PII must never be cached and served on - so the guarantee is real, it
+	 * just lives in the card trait rather than here.
 	 *
 	 * Known cache limitation: WPMTM_Cache::flush_event_page() only flushes
 	 * the tournament's linked event page (docs/SPEC.md, "Decisions
